@@ -2,7 +2,9 @@
 
 Objectif : rendre l'inventaire mémoire et les conseils de démarrage plus exacts, compréhensibles et prudents, sans transformer RamScope en nettoyeur automatique. Toute modification doit rester réversible, explicite, et ne doit jamais se baser sur un seul nom de processus ou un seuil de RAM.
 
-Ce document est la version 2 du plan. Il remplace la version précédente, dont l'étape 0 annonçait comme livrés un README de présentation et un `SAFETY.md` qui n'existent pas dans le dépôt. Un plan qui déclare terminé ce qui n'existe pas ne peut pas servir de référence : la règle de véracité ci-dessous existe pour empêcher que cela se reproduise.
+Ce document est la version 3 du plan. La version 2 corrigeait la version 1, dont l'étape 0 annonçait comme livrés un README de présentation et un `SAFETY.md` qui n'existaient pas dans le dépôt. Un plan qui déclare terminé ce qui n'existe pas ne peut pas servir de référence : la règle de véracité ci-dessous existe pour empêcher que cela se reproduise.
+
+La version 3 (2026-11-13, audit du code contre le registre) apporte cinq amendements : (1) le versionnage : à l'audit, seul `README.md` était suivi par git, le projet et ce plan étaient hors de tout versionnage — un commit de baseline (`e5198a9`) existe désormais et sert de référence à la section 1 ; (2) l'agrégation des gains par hôte est précisée partout avec la même sémantique — somme des parts plafonnée à la RAM de l'hôte — car le critère de sortie de l'étape 3 se contredisait sur ce point ; (3) deux défauts du rapport exporté sont enregistrés (`D15`, `D16`) ; (4) la section 1 est révisée, datée et épinglée au commit de baseline ; (5) le décompte de règles inclut la table `PROCESSES` (602 règles, pas 405).
 
 ## 0. Comment lire et tenir ce plan
 
@@ -22,25 +24,29 @@ Règles de tenue :
 - Les chiffres affichés restent annotés comme mesurés, estimés ou indisponibles. Une estimation n'est jamais présentée comme une mesure.
 - Si l'identité d'un élément est incertaine, la recommandation est « rien à faire » ou « vérifier manuellement », jamais une action automatique.
 - Ne pas prétendre avoir testé ce qui n'a pas été exécuté. La compilation Windows est vérifiable sur cette machine ; l'exécution réelle des actions exige une VM ou un instantané.
+- Avant chaque étape, confronter la section 1 au journal et au code : en cas d'écart, le journal prime et la section 1 est révisée avec une nouvelle date. Une affirmation de la documentation (README, `SAFETY.md`) qui n'est pas encore vraie dans le code est un défaut de la documentation, pas du code attendu.
 
 ## 1. État vérifié du dépôt (référence de départ)
 
-Constat établi le 2026-11-13, sur la machine de développement Windows, sans modification du code.
+Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le même jour à 23 h 59**, pendant l'exécution de l'étape 0 ; la référence est désormais le commit de baseline cité dans le journal (section 7).
 
-| Élément | Constat |
+| Élément | Constat révisé (23 h 59) |
 |---|---|
-| Volume | 5 655 lignes : `rules.rs` 1 017, `win.rs` 1 457, `app.js` 749, `server.rs` 366, `demo.rs` 506, `ffi.rs` 462 |
-| Base de règles | 262 services, 93 entrées de démarrage, 50 tâches |
-| `cargo test` | **code retour 0** — 5 tests, 5 réussis, 0 échec |
-| `cargo fmt --check` | **code retour 1** — 66 hunks dans 7 fichiers (`demo.rs`, `ffi.rs`, `main.rs`, `rules.rs`, `server.rs`, `util.rs`, `win.rs`) |
+| Volume | 6 560 lignes : `win.rs` 1 537, `rules.rs` 1 172, `demo.rs` 1 063, `server.rs` 526 (réécrit, étape 1), `app.js` 748, `ffi.rs` 465, `model.rs` 316, `plan.rs` 198 (nouveau, étape 0), `util.rs` 180, `report.rs` 177, `main.rs` 103 (réécrit, étape 1), `platform.rs` 75 |
+| Base de règles | 602 règles : 262 services, 197 processus, 93 entrées de démarrage, 50 tâches |
+| Tests | 15 fonctions de test : 5 dans `plan.rs` (étape 0), 5 dans `rules.rs`, 5 dans `server.rs` (étape 1) ; `cargo test` code retour 0 sur les quinze, consigné au journal (7.2) |
+| `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
 | `cargo clippy` | **non exécuté** à ce stade |
 | Build release | **non exécuté** à ce stade |
 | Rapport présent | `ramscope-data/rapports/ramscope-2026-11-13-19-14-44.json` porte `"demo": true` : ce sont des données simulées, pas une mesure de la machine |
-| `README.md` | 2 lignes, titre dupliqué : ne documente ni usage, ni interprétation des mesures |
-| `SAFETY.md` | **absent** |
+| `README.md` | réécrit à l'étape 0 ; ses affirmations de sécurité des étapes 1–2 sont vraies dans l'arbre : `Host` et origine (tests nommés dans `server.rs`), refus des cibles protégées par délégation au moteur (`win.rs` appelle `plan::validate`, vérifié à 00 h 05) |
+| `SAFETY.md` | créé à l'étape 0, à la racine du dépôt ; mêmes vérifications que pour le README |
+| Versionnage | avant le commit de baseline : un seul fichier suivi (`README.md`) ; remote configuré (`lupeka1/q-memory-manager`), rien poussé |
 | Compilation Windows | `cargo test` compile `win.rs` : la cible Windows est vérifiable ici. Seule l'application réelle des actions demande une VM ou un instantané |
 
 Conséquence de méthode : la vérification n'est plus regroupée en fin de parcours. Chaque étape se termine par son propre contrôle, et `cargo fmt --check` doit repasser à 0 dès l'étape 0 — sinon l'étape 6 échouerait après six étapes de travail non validées.
+
+Écart relevé à la révision de 23 h 59, clos depuis : `README.md` et `SAFETY.md` décrivent le refus des cibles protégées « par le moteur et par le serveur », et `server.rs` ne référençait pas `plan::validate`. La vérification (00 h 05) montre que `win.rs` — le moteur — appelle `plan::validate` (ligne 1462) avant d'agir : l'affirmation est vraie par délégation, toute demande passant par le backend qui valide. À l'étape 2, le serveur devra en plus valider avant `backend.apply`, comme prévu.
 
 ## 2. Invariants de conception
 
@@ -48,7 +54,7 @@ Ces règles priment sur toute considération d'ergonomie ou de gain affiché.
 
 1. **La RAM est une observation, pas une preuve de danger.** Un processus gourmand n'est pas un processus inutile.
 2. **Verrou et gravité sont deux notions distinctes.** `locked` signifie « RamScope refuse d'agir » ; `Level` signifie « à quel point c'est important pour Windows ». Un service verrouillé n'est pas forcément vital et ne doit pas être affiché comme tel.
-3. **Les gains ne s'additionnent pas entre services d'un même hôte.** La RAM d'un `svchost.exe` est partagée : le total d'un lot se calcule par hôte avec un maximum, jamais par somme de parts.
+3. **Les gains ne s'additionnent pas naïvement entre services d'un même hôte.** La RAM d'un `svchost.exe` est partagée : pour chaque hôte, le gain différé vaut la somme des parts plafonnée à la RAM de l'hôte — `min(somme des parts, RAM de l'hôte)` — et le total du lot est la somme des hôtes distincts. Tant que l'hôte reste en vie, aucun service de cet hôte n'apporte de gain immédiat.
 4. **Aucune action destructive ne repose sur un seuil de RAM ou un nom seul.** Il faut une identité vérifiée et une justification traçable.
 5. **L'identité d'une cible est revérifiée au moment d'agir**, pas seulement au moment de collecter : PID recyclé, service reconfiguré entre-temps, tâche supprimée.
 6. **Aucune promesse de réversibilité pour une terminaison de processus.** Le texte d'aide et les confirmations le disent explicitement.
@@ -75,8 +81,10 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | D10 | P2 | `rules.rs` — table `SERVICES` | La clé `ngcctorSvc` est la seule en majuscules alors que le nom du service est mis en minuscules : la règle ne peut jamais correspondre |
 | D11 | P2 | `rules.rs` — `process_advice` | La branche spécifique `svchost.exe` est inatteignable, `svchost.exe` figurant dans `PROTECTED_PROCESSES` et traité en amont |
 | D12 | P2 | `main.rs`, `server.rs` — option `--host` | `--host 0.0.0.0` est accepté alors que l'aide annonce une écoute en boucle locale uniquement. Cela exposerait jeton et actions au réseau local |
-| D13 | P2 | Dépôt entier | `cargo fmt --check` échoue : 66 hunks dans 7 fichiers |
-| D14 | P2 | `README.md`, `SAFETY.md` | Le plan v1 les déclarait livrés ; le README est un stub de deux lignes et `SAFETY.md` est absent |
+| D13 | P2 | Dépôt entier | `cargo fmt --check` échouait : 66 hunks dans 7 fichiers. Corrigé dans l'arbre de travail (code retour 0 à 23 h 47) ; fermeture au journal à l'étape 0 |
+| D14 | P2 | `README.md`, `SAFETY.md` | Le plan v1 les déclarait livrés ; le README était un stub de deux lignes et `SAFETY.md` était absent. Les deux existent depuis l'étape 0, avec la réserve de vérité notée en section 1 |
+| D15 | P1 | `report.rs` — `build()`, colonnes « Gain » | Le rapport exporté additionne gain immédiat et gain différé dans une même cellule (`gain + gain_next_boot`), pour les services comme pour le démarrage. Même vice que D3, dans l'export ; l'étape 3 cite le rapport dans son critère de sortie sans l'avoir à son périmètre |
+| D16 | P2 | `report.rs` — ligne « rien à optimiser » | « Rien à optimiser sans risque » emploie une formulation que l'étape 5 bannit, hors du périmètre de son contrôle (limité à `src/web/`). La justification `rules.rs` « Désactivable sans risque » est conservée : elle qualifie un élément précis, pas une sélection de masse |
 
 D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2).
 
@@ -178,21 +186,22 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 **Objectif.** Qu'aucun gain affiché ne soit faux : ni inventé, ni additionné à tort, ni présenté comme immédiat quand il est différé.
 
-**Périmètre.** `model.rs` — `Advice`, `MemoryInfo` ; `rules.rs` — `service_advice`, `process_advice`, `startup_advice` ; `win.rs` — `memory_info`, collecte des services, agrégation du plan ; `web/app.js` — totaux et rendu.
+**Périmètre.** `model.rs` — `Advice`, `MemoryInfo` ; `rules.rs` — `service_advice`, `process_advice`, `startup_advice` ; `win.rs` — `memory_info`, collecte des services, agrégation du plan ; `web/app.js` — totaux et rendu ; `report.rs` — colonnes « Gain » du rapport exporté (D15, D16).
 
 **Changements.**
 
 - Remplacer les entiers nus de gain par une mesure typée : valeur, nature (`mesuré`, `estimé`, `indisponible`), portée (`privé`, `working set`, `part d'hôte`), additivité (oui/non). Le champ reste sérialisable pour ne pas casser le rapport exporté plus que nécessaire.
-- Calculer le total d'un lot par hôte : un maximum par `pid` hôte, puis somme des hôtes distincts. Jamais la somme des parts `host_ram / shared` (D6).
+- Calculer le total d'un lot par hôte : pour chaque `pid` d'hôte, somme des parts plafonnée à la RAM de l'hôte — `min(somme des parts, host_ram)` — puis somme des hôtes distincts. Jamais la somme nue des parts `host_ram / shared` (D6). Le gain immédiat d'un service d'un hôte partagé reste nul tant que l'hôte reste en vie.
 - Supprimer les constantes de repli 60 Mo et 40 Mo (D5). Sans mesure : `indisponible`, affiché « non chiffrable ».
 - Supprimer la règle des 150 Mo (D4). Un processus tiers non répertorié sans fenêtre devient `Unknown` avec « vérifier manuellement », pas une action.
 - Supprimer la conversion différé → immédiat de `stopNow`. Remplacer par une mesure : mémoire disponible avant, application, attente bornée, mémoire disponible après ; afficher le delta comme **mesuré**, et le reste comme **estimé** (D3). Un service arrêté ne libère pas sa part d'un hôte partagé : ne pas l'annoncer.
+- `report.rs` : séparer gain immédiat et gain différé dans le rapport exporté, jamais une somme des deux dans une même cellule ; reformuler « Rien à optimiser sans risque » en « Rien à optimiser : configuration déjà saine » (D15, D16).
 - Étiqueter `compressed` pour ce qu'il est — le working set du processus « Memory Compression », une approximation — ou utiliser le compteur système correspondant si disponible.
 - Vérifier que `used = total - available` est bien la définition annoncée dans l'interface, et que `commit`, `kernel` et `cache` portent leur nom Windows exact dans l'infobulle.
 
 **Critère de sortie.**
 
-- Test unitaire : deux services du même hôte avec des parts de 100 et 200 Mo donnent un total de 300 Mo, pas 300 Mo additionnés une deuxième fois par le plan ; trois services d'un hôte de 300 Mo donnent 300 Mo au maximum.
+- Test unitaire, sémantique `min(somme des parts, RAM de l'hôte)` : pour un hôte de 400 Mo, deux services de parts 100 et 200 Mo donnent un total hôte de 300 Mo ; pour un hôte de 250 Mo, les mêmes parts donnent 250 Mo — le plafond lie, jamais 300 ; deux hôtes distincts de 100 et 200 Mo donnent un total de lot de 300 Mo ; un service d'un hôte qui reste en vie n'ajoute rien au gain immédiat.
 - `grep -n "150 \* 1024 \* 1024\|60 \* 1024 \* 1024\|40 \* 1024 \* 1024" src/` → aucun résultat.
 - En mode démo, l'écran de confirmation affiche deux lignes distinctes, « tout de suite : X » et « au prochain démarrage : Y », et X n'inclut jamais un gain de type démarrage.
 - Le rapport exporté contient la nature de chaque gain.
@@ -219,7 +228,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 **Critère de sortie.**
 
-- Audit automatique des 405 règles (262 + 93 + 50) : invariants vérifiés, zéro doublon, zéro clé en majuscules, zéro mode de correspondance ambigu.
+- Audit automatique des 602 règles (262 services + 197 processus + 93 démarrage + 50 tâches) : invariants vérifiés, zéro doublon, zéro clé en majuscules, zéro mode de correspondance ambigu.
 - Test qui prouve qu'une entrée de démarrage dont la commande contient `php` ne correspond plus à la règle `hp`.
 - `grep` : plus aucun `contains` sur `command` dans la fonction de conseil de démarrage.
 - Le nombre de règles sans source est affiché dans le journal de l'étape.
@@ -247,7 +256,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 **Critère de sortie.**
 
-- `grep -rn "sans risque\|aucun risque réel\|gain net" src/web/` → aucun résultat.
+- `grep -rn "sans risque\|aucun risque réel\|gain net" src/web/ src/report.rs` → aucun résultat. La justification `rules.rs` « Désactivable sans risque » reste hors bannissement (D16) : elle qualifie un élément précis, pas une sélection de masse.
 - En mode démo, la revue visuelle consignée montre : une sélection vide par défaut, un total séparé immédiat/différé, un `Kill` signalé comme irréversible.
 - Les parcours charger / filtrer / sélectionner / appliquer / restaurer / exporter sont exercés en démo et consignés.
 
@@ -296,11 +305,13 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 **Données RAM incomplètes.** Taille manquante, hôte sans service identifiable, valeurs nulles, cache non fourni : affichage « indisponible », jamais zéro.
 
-**Fusions de services.** `svchost.exe` hébergeant plusieurs services, répartition approximative, total de lot non additif, arrêt d'un service d'un hôte partagé.
+**Fusions de services.** `svchost.exe` hébergeant plusieurs services, répartition approximative, total de lot non additif avec plafond `min(somme des parts, RAM de l'hôte)` atteint ou non, arrêt d'un service d'un hôte partagé.
 
 **Fermeture normale et terminaison.** La même application ne doit pas être présentée comme sûre à terminer sans avertissement ; texte de confirmation distinct selon le type d'action.
 
 **Rollback.** Point de restauration correct, restauration partielle, restauration totale, échec d'application, action irréversible absente du point.
+
+**Rapport exporté.** Gains immédiat et différé séparés, jamais additionnés dans une même cellule (D15) ; formulations bannies absentes (D16).
 
 **Surface HTTP.** `Host` inconnu, origine trompeuse par suffixe, absence de jeton, jeton invalide, corps trop volumineux, plus de 400 actions, méthode non autorisée.
 
@@ -328,6 +339,10 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 | `cargo clippy --all-targets -- -D warnings` | non exécuté | — |
 | `cargo build --release` | non exécuté | — |
 | Lancement de l'application | non exécuté | — |
+
+### 7.0 Baseline (2026-11-13, minuit)
+
+Commit `e5198a9` — « Baseline : rien du projet n'était versionné » : `ramscope/`, ce plan, `README.md` et `SAFETY.md` versionnés (20 fichiers, 7 556 lignes), avec `.gitignore` excluant les artefacts de build, les données d'exécution machine et les espaces de travail des agents. Avant ce commit, git ne suivait qu'un `README.md` de deux lignes : aucun point de retour n'existait pour les tests de réversion, et l'état d'avant l'étape 0 n'est pas reconstructible. Remote configuré (`lupeka1/q-memory-manager`), push non effectué — décision de Ro, après rafraîchissement des identifiants `gh` (401 constaté).
 
 ### 7.1 Étape 0 — contrôles exécutés (2026-11-13)
 
@@ -367,9 +382,9 @@ Non exécuté à cette étape : lancement avec `--host 0.0.0.0` (le refus est co
 | 0 — Socle vérifiable | terminée (2026-11-13) | D13, D14 | voir 7.1 |
 | 1 — Surface locale | terminée (2026-11-13) | D1, D12 | voir 7.2 |
 | 2 — Identité et irréversibilité | à faire | D2, D8 | — |
-| 3 — Vérité des chiffres | à faire | D3, D4, D5, D6 | — |
+| 3 — Vérité des chiffres | à faire | D3, D4, D5, D6, D15 | — |
 | 4 — Règles et provenance | à faire | D7, D9, D10, D11 | — |
-| 5 — Interface de décision | à faire | D8 (volet interface) | — |
+| 5 — Interface de décision | à faire | D8 (volet interface), D16 | — |
 | 6 — Recette et documentation | à faire | — | — |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.
@@ -404,7 +419,7 @@ curl.exe -s -o NUL -w "%{http_code}" -X POST -H "Content-Type: application/json"
 Contrôles de formulation et de constantes :
 
 ```text
-grep -rn "sans risque\|aucun risque réel\|gain net" src/web/
+grep -rn "sans risque\|aucun risque réel\|gain net" src/web/ src/report.rs
 grep -rn "150 \* 1024 \* 1024\|60 \* 1024 \* 1024\|40 \* 1024 \* 1024" src/
 ```
 
