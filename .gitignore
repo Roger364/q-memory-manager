@@ -1,0 +1,10 @@
+# Artefacts de build Rust
+ramscope/target/
+
+# Données d'exécution de l'application : rapports et points de restauration,
+# contenu de la machine locale (privé)
+ramscope/ramscope-data/
+
+# Espaces de travail des agents (métadonnées de session, conversations)
+.freebuff/
+.workbuddy-ai/
