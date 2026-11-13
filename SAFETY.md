@@ -41,6 +41,7 @@ Un point de restauration est écrit pour un lot qui contient au moins une action
 - La mémoire d'un service hébergé dans `svchost.exe` est partagée : RamScope affiche une part, pas une mesure isolée. Ces parts ne s'additionnent pas.
 - La mémoire « compressée » affichée est le working set du processus Memory Compression : approximation.
 - Les gains affichés sont des estimations.
+- Autres défauts connus, non corrigés à ce stade : la terminaison d'un processus ne vérifie pas encore son identité, un PID recyclé peut donc désigner un autre programme (D2) ; l'aide `--help` affirme à tort que toutes les modifications sont réversibles (D8), alors que la terminaison ne l'est pas. Voir `PLAN.md`.
 - Défauts connus, non corrigés à ce stade : un gain différé peut être présenté comme immédiat quand l'option « Libérer la RAM maintenant » est cochée (D3) ; une application tierce sans fenêtre au-dessus de 150 Mo peut être proposée à la fermeture sur ce seul critère (D4) ; des gains de 60 ou 40 Mo peuvent être estimés sans mesure (D5) ; l'addition des parts d'un même hôte reste approximative (D6). Voir `PLAN.md`.
 
 ## Droits et surface locale

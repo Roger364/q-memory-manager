@@ -56,7 +56,7 @@ Sans `--demo` ni `--no-admin`, RamScope demande l'élévation (UAC) au lancement
 | Superflu | Inutile dans la quasi-totalité des cas. |
 | Non répertorié | RamScope ne sait pas : aucune action proposée. |
 
-Les services et processus verrouillés sont refusés par le moteur et par le serveur, pas seulement masqués dans l'interface.
+Les services et processus verrouillés sont refusés par le moteur, quel que soit le point d'entrée, et pas seulement masqués dans l'interface.
 
 ## Actions
 
