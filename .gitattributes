@@ -1,0 +1,3 @@
+# Le fichier de sommes doit rester en LF : sha256sum ne tolère pas le CRLF.
+docs/evidence/SHA256SUMS text eol=lf
+docs/evidence/*.png binary
