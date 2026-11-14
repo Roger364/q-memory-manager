@@ -153,8 +153,10 @@ impl RegKey {
         let (t, d) = self.get(name)?;
         if t == REG_SZ || t == REG_EXPAND_SZ {
             let u: Vec<u16> = d
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| u16::from_le_bytes(*c))
                 .collect();
             Some(expand(&from_wide_buf(&u)))
         } else {
@@ -729,8 +731,10 @@ fn lnk_target(path: &Path) -> String {
     }
     if best.is_empty() {
         let u: Vec<u16> = data
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         let wide = String::from_utf16_lossy(&u);
         for m in wide.split('\0') {
@@ -813,8 +817,10 @@ fn raw_startup() -> Vec<RawStartup> {
                     continue;
                 }
                 let u: Vec<u16> = data
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_le_bytes(*c))
                     .collect();
                 let cmd = expand(&from_wide_buf(&u));
                 let enabled = approved_state(root, sub, &name).unwrap_or(true);
