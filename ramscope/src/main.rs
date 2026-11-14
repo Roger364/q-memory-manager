@@ -91,7 +91,9 @@ fn main() {
         last_err.unwrap_or_else(|| "erreur inconnue".into())
     );
     eprintln!("{msg}");
-    let _ = std::fs::write(util::data_dir().join("erreur.log"), &msg);
+    if let Ok(dir) = util::data_dir() {
+        let _ = std::fs::write(dir.join("erreur.log"), &msg);
+    }
 
     #[cfg(windows)]
     unsafe {

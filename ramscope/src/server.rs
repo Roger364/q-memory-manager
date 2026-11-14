@@ -344,7 +344,10 @@ fn handle(app: &App, mut req: Request) {
         }
         "/api/export" => {
             let s = app.snapshot(false);
-            let dir = util::data_dir().join("rapports");
+            let dir = match util::data_dir() {
+                Ok(d) => d.join("rapports"),
+                Err(e) => return err(req, 500, &format!("dossier de données indisponible : {e}")),
+            };
             let _ = std::fs::create_dir_all(&dir);
             let stamp = util::now_string().replace([':', ' '], "-");
             let html_path = dir.join(format!("ramscope-{stamp}.html"));
@@ -368,12 +371,19 @@ fn handle(app: &App, mut req: Request) {
             }
         }
         "/api/open-dir" => {
-            let dir = util::data_dir();
+            let dir = match util::data_dir() {
+                Ok(d) => d,
+                Err(e) => return err(req, 500, &format!("dossier de données indisponible : {e}")),
+            };
             #[cfg(windows)]
             {
-                let _ = std::process::Command::new(crate::win::system32_path("explorer.exe"))
-                    .arg(&dir)
-                    .spawn();
+                let explorer = match crate::win::system32_path("explorer.exe") {
+                    Ok(p) => p,
+                    Err(e) => return err(req, 500, &e),
+                };
+                if let Err(e) = std::process::Command::new(explorer).arg(&dir).spawn() {
+                    return err(req, 500, &format!("explorateur introuvable : {e}"));
+                }
             }
             json(
                 req,

@@ -202,6 +202,23 @@ impl Default for OSVERSIONINFOW {
 pub type WNDENUMPROC = extern "system" fn(HWND, isize) -> BOOL;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GUID {
+    pub data1: u32,
+    pub data2: u16,
+    pub data3: u16,
+    pub data4: [u8; 8],
+}
+
+/// FOLDERID_LocalAppData : identifiant stable du dossier de données local.
+pub const FOLDERID_LOCALAPPDATA: GUID = GUID {
+    data1: 0xF1B3_2785,
+    data2: 0x6FBA,
+    data3: 0x4FCF,
+    data4: [0x9D, 0x55, 0x7B, 0x8E, 0x7F, 0x15, 0x70, 0x91],
+};
+
+#[repr(C)]
 #[derive(Default, Clone, Copy)]
 pub struct FILETIME {
     pub dwLowDateTime: DWORD,
@@ -233,6 +250,7 @@ extern "system" {
     pub fn Process32FirstW(hSnapshot: HANDLE, lppe: *mut PROCESSENTRY32W) -> BOOL;
     pub fn Process32NextW(hSnapshot: HANDLE, lppe: *mut PROCESSENTRY32W) -> BOOL;
     pub fn GetComputerNameW(lpBuffer: LPWSTR, nSize: *mut DWORD) -> BOOL;
+    pub fn GetSystemDirectoryW(lpBuffer: LPWSTR, uSize: DWORD) -> DWORD;
     pub fn GetLastError() -> DWORD;
     pub fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD;
 }
@@ -417,6 +435,12 @@ extern "system" {
 
 #[link(name = "shell32")]
 extern "system" {
+    pub fn SHGetKnownFolderPath(
+        rfid: *const GUID,
+        dwFlags: DWORD,
+        hToken: HANDLE,
+        ppszPath: *mut LPWSTR,
+    ) -> i32;
     pub fn ShellExecuteW(
         hwnd: HWND,
         lpOperation: LPCWSTR,
@@ -430,6 +454,11 @@ extern "system" {
 #[link(name = "ntdll")]
 extern "system" {
     pub fn RtlGetVersion(lpVersionInformation: *mut OSVERSIONINFOW) -> i32;
+}
+
+#[link(name = "ole32")]
+extern "system" {
+    pub fn CoTaskMemFree(pv: *mut c_void);
 }
 
 // ---------------------------------------------------------------------------

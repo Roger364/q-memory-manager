@@ -1,32 +1,76 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** proposition, à valider avant implémentation. Aucun code n'a été modifié.
-**Base :** revue technique WorkBuddy du 2026-11-14, audit du code au commit `d08e412` ; plan rédigé alors que le HEAD local était `ecccadc`.
-**Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis l'industrialisation des tests.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
+**Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
+**Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
-> Les constats de la revue sont issus d'une lecture de code, pas d'exploits exécutés. Le plan distingue donc ce qui doit être corrigé de ce qui doit d'abord être décidé.
+> Les constats viennent d'une lecture de code et de contrôles rejoués, pas d'exploits exécutés. Le plan distingue donc ce qui doit être corrigé de ce qui doit d'abord être décidé.
 
-## 1. Principes
+## 1. Évaluation de la revue Hermes-Beam
+
+### 1.1 Ce que la revue apporte
+
+La revue est crédible et utile. Elle audite `3673120`, cite des lignes précises, rejoue les contrôles et confirme les constats de la revue WorkBuddy sans reprendre son ancien diagnostic de remote. Elle apporte trois éléments qui manquaient ou qui étaient trop implicites dans le premier plan :
+
+- **C1** : `Rule.source` et `Rule.reviewed` sont effectivement du code mort, et l'audit de `rules.rs` impose `reviewed == "non datée"`. Une vraie date de revue ferait donc échouer un test censé garantir la qualité des règles.
+- **C8** : plusieurs tests de `server.rs` vérifient la présence de chaînes dans les sources (`include_str!`) plutôt que le comportement. Ils peuvent casser sur un refactor inoffensif et passer sur une régression qui conserve la chaîne.
+- **C15** : aucun fichier de licence n'est présent. C'est un choix juridique à documenter avant toute distribution publique.
+
+Elle précise aussi deux points déjà présents dans le plan : le jeton de session n'authentifie pas un processus local, et le champ `from` fourni par le client peut être absent, ce qui saute la revérification d'état.
+
+### 1.2 Ce que je corrige dans son classement
+
+Je ne reprends pas son ordre tel quel :
+
+- **C1 est une dette de vérité des données, pas une élévation de privilèges.** Il reste un critère de sortie avant distribution, mais il ne doit pas retarder C7 et C2, qui sont des risques d'exécution élevée et de frontière de confiance.
+- **C2 est un risque local, pas une faille distante.** Le plan doit rendre explicite le modèle de menace et éviter de promettre une authentification que le jeton actuel ne fournit pas.
+- **C15 est une décision, pas un correctif de code.** Le plan ne choisit pas une licence à la place de Ro ; il impose une décision avant distribution.
+- **C8 est un chantier de qualité de tests**, séparé des correctifs de sécurité. Il ne doit pas être noyé dans la CI déjà livrée.
+
+### 1.3 Verdict par constat
+
+| Constat | Verdict | Destination | Effet sur le plan |
+|---|---|---|---|
+| C1 — provenance morte et audit figé | Confirmé, nouveau | 9.6 | Ajout d'un chantier distinct, critère de sortie avant distribution |
+| C2 — API locale élevée et état fourni par le client | Confirmé, déjà connu | 9.3 | Précision sur `from`, `was_enabled`, le jeton et le canal local |
+| C3 — origine optionnelle | Confirmé, déjà connu | 9.4 | Inchangé, test explicite |
+| C4 — corps non borné | Confirmé, déjà connu | 9.4 | Inchangé, limite avant lecture |
+| C5 — verrous non indépendants | Confirmé, déjà connu | 9.5 | Inchangé |
+| C6 — options CLI perdues à l'élévation | Confirmé, déjà connu | 9.2 | Inchangé, test d'arguments |
+| C7 — chemins système via l'environnement | Confirmé, déjà connu | 9.1 | Inchangé, priorité sécurité |
+| C8 — tests sur le texte source | Confirmé, nouveau | 9.9 | Chantier dédié, distinct de la CI |
+| C9 — `extract_exe` et Unicode | Confirmé, déjà connu | 9.8 | Inchangé |
+| C10 — arrêt brutal avec threads actifs | Confirmé, déjà connu | 9.8 | Inchangé |
+| C11 — plage de ports vide | Confirmé, déjà connu | 9.8 | Inchangé |
+| C12 — faute « Irrréversible » | Confirmé, déjà connu | 9.8 | Inchangé |
+| C13 — apostrophe non échappée | Confirmé, déjà connu | 9.8 | Inchangé |
+| C14 — zéro mesuré confondu avec absence | Confirmé, déjà connu | 9.7 | Séparé de la provenance |
+| C15 — licence absente | Confirmé, nouveau | 9.10 | Décision explicite avant distribution |
+
+Aucun constat n'est rejeté. La revue ne remplace toutefois pas un test d'action réelle : ses constats de sécurité restent des lectures de code avec préconditions explicitées.
+
+## 2. Principes
 
 - Ne jamais appliquer d'action réelle à la machine de tous les jours ; les tests d'écriture se font dans une VM ou un Windows Sandbox jetable.
 - Un correctif sans test de réversion nommé n'est pas terminé.
 - Ne pas annoncer une garantie de sécurité qui n'a pas été testée.
 - Conserver les garde-fous existants : `Host` exact, jeton, origine stricte, validation serveur et verrous moteur.
 - Un commit par sujet, avec la commande et le code retour consignés dans `PLAN.md`.
-- Corriger d'abord ce qui est concret et peu risqué ; les décisions d'architecture viennent après.
+- Corriger d'abord les risques concrets et peu risqués ; les décisions d'architecture viennent après.
+- Ne pas marquer un constat « corrigé » sans test qui échoue si la correction est annulée.
 
-## 2. Décisions à prendre avant de coder
+## 3. Décisions à prendre avant de coder
 
 ### D9-1 — Les processus locaux sont-ils dans le modèle de menace ?
 
-- **Si oui** : P1-2 est une vraie élévation locale de privilèges et doit être traitée structurellement (canal local authentifié, pas seulement un jeton lisible dans une page).
+- **Si oui** : C2 est une vraie élévation locale de privilèges et doit être traitée structurellement (canal local authentifié, pas seulement un jeton lisible dans une page).
 - **Si non** : documenter explicitement que RamScope fait confiance aux processus de l'utilisateur, et appliquer seulement les mesures de réduction de surface. Cette position doit être écrite dans `SAFETY.md` : elle ne doit pas être implicite.
 
-Recommandation : considérer les processus locaux comme non fiables tant que RamScope s'élève par défaut. C'est le cas le plus prudent et le plus cohérent avec une API qui peut arrêter des services.
+Recommandation : considérer les processus locaux comme non fiables tant que RamScope s'élève par défaut.
 
 ### D9-2 — Conserver l'élévation UAC par défaut ?
 
-Si oui, P1-2 et P2-4 sont prioritaires. Si l'usage recommandé devient `--no-admin`, il faut le dire clairement dans le README et ne plus présenter l'élévation comme le chemin normal.
+Si oui, C2 et C6 sont prioritaires. Si l'usage recommandé devient `--no-admin`, il faut le dire clairement dans le README et ne plus présenter l'élévation comme le chemin normal.
 
 ### D9-3 — API HTTP ou canal local dédié ?
 
@@ -36,24 +80,36 @@ Le remplacement complet de HTTP par un named pipe avec DACL est structurel et co
 
 Le lot 9 ne doit pas contenir de refonte graphique, de nouvelle base de règles, de signature de code ni de télémétrie.
 
-## 3. Vue d'ensemble
+### D9-5 — Licence et distribution
 
-| Priorité | Chantier | Constat | Effort indicatif |
-|---|---|---|---:|
-| 1 | Chemins système et dossier de données non influençables | P1-1 | 0,5 j |
-| 2 | Options CLI conservées à l'élévation | P2-4 | 0,25 j |
-| 3 | Frontière de confiance de l'API élevée | P1-2 | 1,5–2 j |
-| 4 | Origine obligatoire et corps borné | P2-1, P2-2 | 0,5 j |
-| 5 | Verrous réellement indépendants | P2-3 | 0,5 j |
-| 6 | Provenance des règles et zéro mesuré | P2-5, P2-6 | 1 j |
-| 7 | Robustesse et finitions | P3-3 | 0,5 j |
-| 8 | CI, documentation, sauvegarde distante | P3-1, P3-2 | 1,25 j |
+Décider si le dépôt reste privé, devient public, ou est distribué sous forme de binaire. En l'absence de décision, aucune licence permissive ne doit être ajoutée par défaut. C15 reste ouvert jusqu'à cette décision.
+
+### D9-6 — Portée des tests comportementaux
+
+C8 ne signifie pas automatiser tout le navigateur. Le plan privilégie des fonctions pures testables (sélection, formulation, calcul de gains) et ne réserve les tests DOM ou navigateur qu'aux parcours qui ne peuvent pas être testés autrement.
+
+## 4. Vue d'ensemble
+
+| Ordre | Chantier | Constats | Effort indicatif |
+|---:|---|---|---:|
+| 1 | Chemins système et données non influençables | C7 | 0,5 j |
+| 2 | Options CLI conservées à l'élévation | C6 | 0,25 j |
+| 3 | Frontière de confiance de l'API élevée | C2 | 1,5–2 j |
+| 4 | Origine obligatoire et corps borné | C3, C4 | 0,5 j |
+| 5 | Verrous réellement indépendants | C5 | 0,5 j |
+| 6 | Provenance réelle des règles | C1 | 0,5 j |
+| 7 | Zéro mesuré respecté | C14 | 0,25 j |
+| 8 | Robustesse et finitions | C9–C13 | 0,5 j |
+| 9 | Tests comportementaux | C8 | 1 j |
+| 10 | Industrialisation et licence | C15 + état CI | 0,1 j |
 
 Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision sur le canal local.
 
-## 4. Chantiers détaillés
+## 5. Chantiers détaillés
 
-### 9.1 — Chemins système et données : P1-1
+### 9.1 — Chemins système et données : C7
+
+**État :** implémenté le 2026-11-14, tests ajoutés.
 
 **Objectif.** Empêcher un environnement forgé de faire exécuter un binaire élevé ou de rediriger les points de restauration.
 
@@ -70,7 +126,7 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 - Test nommé : `systemroot_forge_ne_change_pas_le_chemin_systeme`.
 - Test nommé : `localappdata_forge_ne_change_pas_le_dossier_donnees`.
 - Test du helper pour `schtasks.exe` et `explorer.exe`.
-- Vérification manuelle ou test FFI : le chemin retourné est identique avec un `SystemRoot` normal et forgé.
+- Vérification FFI ou manuelle : le chemin retourné est identique avec un `SystemRoot` normal et forgé.
 
 **Critère de sortie.**
 - `grep` : plus de `std::env::var("SystemRoot")` ni de `std::env::var("LOCALAPPDATA")` dans les chemins d'autorité.
@@ -79,7 +135,9 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 
 **Réversion.** Le test avec `SystemRoot` forgé échoue si le code revient à la variable d'environnement.
 
-### 9.2 — Élévation : P2-4
+### 9.2 — Élévation : C6
+
+**État :** implémenté le 2026-11-14, tests ajoutés. Validation Sandbox effectuée le 2026-11-15 ; binaire release autonome vérifié.
 
 **Objectif.** Les options choisies ne doivent pas disparaître au moment où RamScope demande l'élévation.
 
@@ -93,15 +151,26 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 - Consigner le port et l'hôte effectifs dans un log de démarrage ou les exposer dans `/api/health` pour rendre le test vérifiable.
 
 **Tests.**
-- Test unitaire de la fonction de reconstruction des arguments : la liste d'arguments est préservée, `--elevated` n'apparaît qu'une fois.
-- Test manuel ou automatisé avec un faux `ShellExecuteW` : les paramètres reçus contiennent le port et l'hôte.
+- Test unitaire de la fonction de reconstruction des arguments : la liste est préservée et `--elevated` n'apparaît qu'une fois.
+- Test avec un faux `ShellExecuteW` : les paramètres reçus contiennent le port et l'hôte.
 - Test réel en VM : `--port 8917 --host localhost --no-browser` avec élévation, vérifier l'écoute sur `localhost:8917` et l'absence d'ouverture de fenêtre.
 
-**Critère de sortie.** Le chemin par défaut n'ignore plus aucune option documentée.
+**Validation Windows Sandbox (2026-11-15, binaire CRT statique).**
+- Commande initiale : `--port 8917 --host 127.0.0.1 --no-browser --no-admin --demo`.
+- Processus élevé observé, PID `9060` :
+  `"C:\Users\WDAGUtilityAccount\AppData\Local\Temp\ramscope-c6.exe" --port 8917 --host 127.0.0.1 --no-browser --demo --elevated`.
+- `POST /api/elevate` : HTTP `200` ; ancien PID `4792` ; processus élevé unique.
+- Contrôles : port conservé, hôte `127.0.0.1` conservé, `--no-browser` conservé, `--no-admin` retiré, `--elevated` unique : **tous vrais**.
+- Le serveur a répondu sur `127.0.0.1:8917` ; le mode `--demo` évite toute action sur le système invité.
+- Le test a été exécuté avec le binaire release de `920 576` octets et **sans `vcruntime140.dll`** copiée dans l'invité ; le script échoue désormais si cette DLL est présente.
 
-**Réversion.** Le test d'arguments échoue si la reconstruction ne conserve pas le port.
+**Limites du test.** Le compte du Sandbox est administrateur : ce test valide la reconstruction et la transmission des arguments par `ShellExecuteW`, pas le consentement UAC d'un compte standard. Le test n'a pas été rejoué avec `--host localhost` ; l'hôte effectif consigné est `127.0.0.1`. Le binaire release importait auparavant `VCRUNTIME140.dll` ; `ramscope/.cargo/config.toml` force désormais la CRT statique (`-C target-feature=+crt-static`), et les imports `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, `MSVCP140.dll` et les DLL UCRT dynamiques vérifiées sont absents du binaire reconstruit.
 
-### 9.3 — Frontière de confiance de l'API élevée : P1-2
+**Critère de sortie.** Le chemin par défaut n'ignore plus aucune option documentée ; le binaire release ne dépend plus de la CRT VC++ dynamique.
+
+**Réversion.** Le test d'arguments échoue si la reconstruction ne conserve pas le port ; retirer `ramscope/.cargo/config.toml` réintroduit l'import `VCRUNTIME140.dll`.
+
+### 9.3 — Frontière de confiance de l'API élevée : C2
 
 **Objectif.** Un processus local non élevé ne doit pas pouvoir faire exécuter des actions au serveur élevé sans preuve d'autorisation, et le serveur ne doit pas croire l'état fourni par le client.
 
@@ -110,19 +179,20 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 **Changements minimaux, dans cet ordre.**
 1. **Jeton** : générer le jeton avec `BCryptGenRandom` (Windows) plutôt qu'avec `new_id()` horloge/PID/xorshift.
 2. **Validation d'état côté serveur** : pour `Service`, `Startup` et `Task`, exiger `from`/`was_enabled` sur toute action ordinaire, puis les comparer au snapshot serveur. Une action sans état observé est refusée, sauf les actions internes de restauration qui ne passent pas par cette route.
-3. **Documentation du modèle** : indiquer noir sur blanc dans `SAFETY.md` si les processus locaux sont supposés fiables. Si le choix est « non fiables », ajouter :
+3. **Restauration** : distinguer explicitement le chemin interne de restauration du chemin public `/api/apply` ; ne pas accepter `from: None` comme contournement sur une action utilisateur.
+4. **Documentation du modèle** : indiquer noir sur blanc dans `SAFETY.md` si les processus locaux sont supposés fiables. Si le choix est « non fiables », ajouter :
    - un contrôle d'intégrité du client ou un canal local authentifié (named pipe avec DACL) ;
    - une limitation claire de l'API HTTP à la session navigateur ;
    - un refus des mutations sans `Origin` (voir 9.4).
-4. **Décision structurelle séparée** : si le canal nommé est retenu, créer un lot dédié. Ne pas mélanger cette refonte avec les correctifs ci-dessus.
+5. **Décision structurelle séparée** : si le canal nommé est retenu, créer un lot dédié. Ne pas mélanger cette refonte avec les correctifs ci-dessus.
 
 **Tests.**
-- `apply` avec `from: null` → refus.
+- `apply` avec `from: null` sur une action utilisateur → refus.
 - `apply` avec `from` différent de l'état serveur → refus.
-- `restore` continue de fonctionner sans `from`.
+- `restore` interne continue de fonctionner sans `from` fourni par le client.
 - Jeton absent, invalide, ou provenant d'un autre port → refus.
 - Test de non-régression : un `Host` autorisé et un jeton valide restent nécessaires.
-- Test de génération : deux jetons successifs ne sont pas prévisibles par l'horloge/PID ; au minimum, vérifier la source CSPRNG et sa longueur.
+- Test de génération : la source CSPRNG et la longueur sont vérifiées ; au minimum, deux jetons successifs ne sont pas prévisibles par l'horloge/PID.
 
 **Critère de sortie.**
 - Le scénario « processus local non élevé lit le jeton puis applique une action » est soit bloqué, soit explicitement documenté comme hors modèle de menace.
@@ -131,7 +201,7 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 
 **Réversion.** Le test `from: null` échoue si la validation d'état est retirée.
 
-### 9.4 — Origine et taille des requêtes : P2-1, P2-2
+### 9.4 — Origine et taille des requêtes : C3, C4
 
 **Objectif.** Réduire la surface de mutation et empêcher un déni de service local par corps géant.
 
@@ -156,14 +226,14 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 
 **Réversion.** Le test sans `Origin` échoue si le contrôle redevient optionnel.
 
-### 9.5 — Verrous réellement indépendants : P2-3
+### 9.5 — Verrous réellement indépendants : C5
 
 **Objectif.** Soit les deux niveaux de refus sont réellement indépendants, soit la documentation cesse de le prétendre.
 
 **Périmètre.** `win.rs`, `server.rs`, `SAFETY.md`, `PLAN.md`, tests.
 
 **Changements.**
-- Ajouter dans `apply_service`, `apply_startup`, `apply_task` une vérification directe des listes protégées, indépendante de `plan::validate`.
+- Ajouter dans `apply_service`, `apply_startup` et `apply_task` une vérification directe des listes protégées, indépendante de `plan::validate`.
 - Vérifier de nouveau l'état courant juste avant l'écriture, même si le serveur a déjà validé.
 - Si cette duplication n'est pas souhaitée, corriger la formulation « deux verrous » en « validation aux deux points d'entrée », avec un renvoi à `plan::validate`.
 - Documenter précisément ce que chaque couche garantit.
@@ -177,40 +247,58 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 
 **Réversion.** Le test d'appel direct à `win::apply` échoue si le contrôle moteur est retiré.
 
-### 9.6 — Provenance et zéro mesuré : P2-5, P2-6
+### 9.6 — Provenance réelle des règles : C1
 
-**Objectif.** La provenance affichée doit être réelle, et un zéro mesuré ne doit jamais être présenté comme une absence de mesure.
+**Objectif.** La provenance affichée doit être réelle, et l'audit ne doit plus figer la dette « non datée » en invariant impossible à faire évoluer.
 
 **Périmètre.** `rules.rs`, `model.rs`, `report.rs`, `web/app.js`, tests.
 
 **Changements.**
-- Exposer `source` et `reviewed` dans `Advice`.
-- Afficher ces champs dans le panneau de détails et dans le rapport exporté.
-- Remplacer l'assertion `reviewed == "non datée"` par : « non datée » ou date ISO valide.
+- Exposer `source` et `reviewed` dans `Advice` et dans le rapport exporté.
+- Afficher ces champs dans le panneau de détails et dans l'export.
+- Remplacer l'assertion `reviewed == REVIEWED` par : « `non datée` ou date ISO valide ».
 - Ajouter un test avec une règle datée pour prouver que l'audit accepte une vraie revue.
-- Faire dépendre l'affichage d'un gain de sa `nature` avant sa valeur : `measured(0)` affiche « 0 mesuré », pas « non chiffrable ».
-- Tester `Gain::measured(0)` dans `merge`, `report.rs` et le rendu JS.
 - Ne pas ajouter une fausse date de revue aux 601 règles : la provenance de famille doit rester honnête.
+- Supprimer `#[allow(dead_code)]` sur les champs lorsqu'ils sont effectivement consommés.
 
-**Critère de sortie.**
-- Le rapport et l'interface montrent la source et la date de revue.
-- Un gain mesuré nul reste mesuré partout.
-- Le test d'audit ne gèle plus la dette « non datée ».
+**Tests.**
+- Une règle avec `reviewed = "non datée"` passe l'audit.
+- Une règle avec une date ISO valide passe l'audit.
+- Une date invalide échoue avec un message explicite.
+- L'API et le rapport contiennent la source et la date de revue.
+
+**Critère de sortie.** Le rapport et l'interface montrent la source et la date de revue ; l'audit accepte les deux états sans imposer la dette.
+
+**Réversion.** Le test avec une règle datée échoue si l'assertion rigide est rétablie.
+
+### 9.7 — Zéro mesuré respecté : C14
+
+**Objectif.** Un zéro mesuré ne doit jamais être présenté comme une absence de mesure.
+
+**Périmètre.** `model.rs`, `report.rs`, `web/app.js`, tests.
+
+**Changements.**
+- Faire dépendre l'affichage d'un gain de sa `nature` avant sa valeur.
+- `Gain::measured(0)` doit rester `Measured` dans `merge`, le rapport et l'interface.
+- Ne pas transformer `estimated(0)` en mesure : il reste indisponible, comme aujourd'hui.
+- Tester `Gain::measured(0)` dans le rapport et le rendu JS.
+
+**Critère de sortie.** Un gain mesuré nul affiche « 0 mesuré », jamais « non chiffrable ».
 
 **Réversion.** Le test `measured(0)` échoue si le rendu redevient basé uniquement sur `bytes == 0`.
 
-### 9.7 — Robustesse et finitions : P3-3
+### 9.8 — Robustesse et finitions : C9–C13
 
 **Objectif.** Supprimer des petits défauts qui peuvent produire un panic ou une expérience incohérente.
 
 **Périmètre.** `util.rs`, `main.rs`, `server.rs`, `web/app.js`, `report.rs`.
 
 **Changements.**
-- `extract_exe` : ne pas utiliser un index calculé sur `to_lowercase()` pour découper la chaîne originale ; utiliser `char_indices` ou une recherche ASCII insensible à la casse.
-- `main.rs` : gérer proprement la plage de ports proche de 65 535, avec un message explicite si aucun port n'est disponible.
-- `server.rs` : remplacer `std::process::exit(0)` par un arrêt coopératif : signaler l'arrêt, attendre les threads, puis quitter.
-- Corriger « Irrréversible » en « Irréversible ».
-- Harmoniser `esc()` et l'échappement JS pour l'apostrophe.
+- C9 : `extract_exe` ne doit pas utiliser un index calculé sur `to_lowercase()` pour découper la chaîne originale ; utiliser `char_indices` ou une recherche ASCII insensible à la casse.
+- C10 : remplacer `std::process::exit(0)` par un arrêt coopératif : signaler l'arrêt, attendre les threads, puis quitter.
+- C11 : gérer proprement la plage de ports proche de 65 535, avec un message explicite si aucun port n'est disponible.
+- C12 : corriger « Irrréversible » en « Irréversible ».
+- C13 : harmoniser `esc()` et l'échappement JS pour l'apostrophe.
 - Ajouter un test de ligne de commande Unicode dans `extract_exe` et un test de dernier port.
 
 **Critère de sortie.**
@@ -218,86 +306,113 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 - Arrêt sans écriture de rollback tronquée.
 - Textes utilisateur sans faute visible.
 
-### 9.8 — CI, documentation, sauvegarde distante : P3-1, P3-2
+### 9.9 — Tests comportementaux : C8
 
-**Objectif.** Rendre la recette reproductible et remettre la documentation et le dépôt distant en accord avec la réalité.
+**Objectif.** Réduire les tests qui vérifient des chaînes de source et augmenter la couverture des décisions réelles.
 
-**Périmètre.** `.github/workflows`, `PLAN.md`, `README.md`, `SAFETY.md`, remote Git.
+**Périmètre.** `server.rs`, `web/app.js`, éventuellement extraction de fonctions pures.
 
 **Changements.**
-- Ajouter une CI minimale sur `windows-latest` : `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`, `node --check src/web/app.js`, `sha256sum -c docs/evidence/SHA256SUMS` (ou équivalent PowerShell).
-- Ajouter un job ou une étape qui refuse les fichiers de test non suivis.
-- Corriger dans `PLAN.md` : nombre de tests `plan.rs`/`rules.rs`, URL du remote, état réel du push.
-- Ne plus présenter les tests d'assertions sur le texte source comme des tests comportementaux ; extraire progressivement les décisions pures.
-- Pousser les commits locaux vers `Roger364/q-memory-manager` **après accord explicite de Ro** ; vérifier ensuite `git ls-remote origin HEAD`.
-- Ne pas ajouter de fichier de test temporaire à la racine ; le `.gitignore` doit couvrir les logs et dossiers de test éphémères.
+- Recenser les tests `include_str!` de `server.rs` et conserver uniquement ceux qui protègent une contrainte de sécurité ou de formulation impossible à tester autrement.
+- Extraire progressivement les décisions pures : `batchable`, calcul des gains, formulation utilisateur, fermeture de modale.
+- Ajouter des tests unitaires sur ces fonctions pures.
+- Pour les parcours DOM qui ne peuvent pas être testés sans navigateur, documenter la limite au lieu de prétendre les couvrir avec `contains`.
+- Ne pas introduire une infra E2E lourde dans ce lot sans décision explicite.
 
-**Critère de sortie.**
-- CI verte sur le commit de clôture.
-- `git ls-remote origin HEAD` et `git rev-parse HEAD` concordent après le push autorisé.
-- `PLAN.md` ne contient plus les trois affirmations fausses relevées par la revue.
+**Critère de sortie.** Les tests de comportement nommés couvrent les décisions critiques ; les tests de chaînes restants sont justifiés et limités.
 
-## 5. Ordre de livraison recommandé
+### 9.10 — Industrialisation et licence : C15
 
-1. **9.1** : chemins système et données (indépendant, testable rapidement).
-2. **9.2** : propagation des options CLI (correctif fonctionnel concret).
-3. **9.4** : origine obligatoire et corps borné (petit périmètre HTTP).
-4. **9.3** : validation d'état, jeton et décision sur le modèle de confiance.
-5. **9.5** : verrous indépendants ou correction documentaire.
-6. **9.6** : provenance et zéro mesuré.
-7. **9.7** : robustesse.
-8. **9.8** : CI, documentation et push.
+**Objectif.** Terminer ce qui est déjà livré et formaliser la décision de licence.
+
+**Déjà livré.**
+- CI Windows : formatage, 43 tests, clippy, build release, JS, sommes SHA-256, refus des fichiers non suivis.
+- Dependabot pour Cargo et GitHub Actions.
+- Remote `Roger364/q-memory-manager` synchronisé ; push fast-forward.
+- Corrections documentaires de `PLAN.md` et du remote.
+
+**Reste à décider.**
+- C15 : choisir entre dépôt privé sans licence permissive, licence open source, ou distribution binaire avec conditions.
+- Ne pas ajouter de `LICENSE` avant la décision de Ro.
+- Une fois la décision prise, ajouter le fichier de licence et la mention correspondante dans le README.
+
+**Critère de sortie.** La décision de licence est consignée ; la CI reste verte ; le dépôt distant est synchronisé.
+
+## 6. Ordre de livraison recommandé
+
+1. **9.1** : chemins système et données (C7), indépendant et testable rapidement.
+2. **9.2** : propagation des options CLI (C6), correctif fonctionnel concret.
+3. **9.3** : frontière de confiance (C2), après décision D9-1.
+4. **9.4** : origine obligatoire et corps borné (C3, C4).
+5. **9.5** : verrous indépendants ou correction documentaire (C5).
+6. **9.6** : provenance réelle des règles (C1), avant distribution.
+7. **9.7** : zéro mesuré (C14).
+8. **9.8** : robustesse et finitions (C9–C13).
+9. **9.9** : tests comportementaux (C8).
+10. **9.10** : décision de licence (C15).
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
-## 6. Matrice de tests à ajouter
+C1 est un critère de sortie avant distribution, mais pas une raison de retarder C7/C2. La distribution publique reste bloquée tant que C1, C2 et C7 ne sont pas traités, et que C15 n'est pas décidé.
+
+## 7. Matrice de tests à ajouter
 
 | Domaine | Test attendu |
 |---|---|
 | Chemins | `SystemRoot` forgé, `LOCALAPPDATA` forgé, `schtasks`/`explorer` absolus |
 | Élévation | arguments conservés, `--elevated` unique, port/hôte effectifs |
 | API | `Host` invalide, jeton absent/invalide, origine absente/invalide |
+| État | `from` nul refusé, `from` divergent refusé, restauration interne autorisée |
 | Corps | `Content-Length` énorme, corps chunked énorme |
-| État | `from` nul, `from` divergent, restauration sans `from` |
 | Verrous | appel direct à `win::apply` sur cible protégée |
-| Gains | hôte complet/partiel, `measured(0)`, `estimated`, `unavailable` |
 | Provenance | source exposée, date « non datée » et date ISO acceptées |
+| Gains | hôte complet/partiel, `measured(0)`, `estimated`, `unavailable` |
 | Robustesse | `extract_exe` Unicode, port 65 535, arrêt propre |
+| Tests | décisions pures extraites, tests de chaînes restants justifiés |
 | Preuves | `sha256sum`, CI, absence de fichiers de test non suivis |
 
 Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. La collecte réelle sur l'hôte reste en `--no-admin` et ne doit jamais appliquer d'action.
 
-## 7. Critères de sortie du lot 9
+## 8. Critères de sortie du lot 9
 
-- [ ] Les 43 tests existants passent toujours.
-- [ ] Les nouveaux tests de réversion passent.
+- [x] Les 43 tests historiques passent toujours ; les 47 tests actuels passent.
+- [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [ ] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [ ] La CI est verte et reproductible.
-- [ ] Aucun P1 ouvert ; les P2 restants sont soit corrigés, soit explicitement acceptés dans `SAFETY.md`.
+- [ ] C1, C2 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
+- [ ] C3–C6 et C14 sont corrigés ou explicitement acceptés dans `SAFETY.md`.
+- [ ] C9–C13 sont corrigés.
+- [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
+- [ ] C15 est décidé et consigné.
 - [ ] La documentation ne promet plus de verrou, d'authentification ou de garantie non testée.
 - [ ] Une action réelle a été testée dans une VM/Sandbox jetable, avec restauration.
 - [ ] Le dépôt distant est à jour après accord de Ro.
 - [ ] `PLAN.md` contient les commandes, codes retour et artefacts du lot.
+- [x] C7 et C6 sont implémentés et couverts par des tests unitaires locaux ; C6 est validé dans Windows Sandbox pour la propagation des options (`--port`, `--host`, `--no-browser`, `--elevated` unique, `--no-admin` retiré). Le consentement UAC d'un compte standard et le test `localhost` restent à faire.
 
-## 8. Hors périmètre
+## 9. Hors périmètre
 
 - Refonte de l'interface ou changement de framework front.
 - Remplacement complet de HTTP par un canal local dédié, sauf décision explicite après 9.3.
 - Nouvelles règles métier ou nouvelle base de règles.
-- Signature de code, installeur, distribution publique.
+- Signature de code, installeur, distribution publique tant que C1/C2/C7/C15 ne sont pas traités.
 - Télémétrie, collecte distante ou nettoyage automatique.
 
-## 9. Risques et parades
+## 10. Risques et parades
 
 | Risque | Parade |
 |---|---|
 | Casser le chemin par défaut en corrigeant l'élévation | test d'arguments + test réel en VM avec port/hôte explicites |
 | Introduire une régression de sécurité en déplaçant la validation | tests `from` nul/divergent, appel direct au moteur, revue dédiée |
 | Refonte du canal local trop large | décision séparée après mesure ; ne pas mélanger avec 9.1–9.4 |
-| Tests de texte source qui remplacent de vrais tests | extraire les fonctions pures et limiter `include_str!` aux gardes de formulation |
+| Test d'audit qui verrouille la dette de provenance | accepter explicitement `non datée` ou une date ISO, avec un test daté |
+| Tests de texte source qui remplacent de vrais tests | extraire les fonctions pures et limiter `include_str!` aux gardes justifiées |
 | Fausse preuve de sécurité | ne jamais marquer un P1 « corrigé » sans test de réversion et, si possible, PoC local |
+| Licence choisie par défaut sans décision | garder C15 comme décision explicite de Ro |
 | Perte de sauvegarde distante | push après accord, vérifier `git ls-remote` |
 
-## 10. Prochaine action
+## 11. Prochaine action
 
-Commencer par **9.1 et 9.2**, qui sont bornés, testables sans machine jetable et corrigent deux risques concrets. Ne pas ouvrir 9.3 avant d'avoir tranché la question D9-1 : selon la réponse, le travail va d'un simple durcissement à une modification de la frontière de confiance.
+Commencer par **9.1 et 9.2**, qui sont bornés, testables sans machine jetable et corrigent deux risques concrets. Ensuite, trancher D9-1 avant d'ouvrir 9.3. Ne pas lancer la refonte du canal local sans mesure du besoin.
+
+La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.

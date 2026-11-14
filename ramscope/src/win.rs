@@ -268,8 +268,70 @@ fn os_name() -> String {
 }
 
 pub fn elevate() -> bool {
-    let exe = std::env::current_exe().unwrap_or_default();
-    let params = to_wide("--elevated");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    elevate_with_args(&args)
+}
+
+/// Reconstruit les arguments de l'instance élevée. `--elevated` est ajouté
+/// une seule fois et `--no-admin` est retiré : demander l'élévation est
+/// incompatible avec un démarrage en lecture seule.
+fn elevated_args(args: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = args
+        .iter()
+        .filter(|a| a.as_str() != "--elevated" && a.as_str() != "--no-admin")
+        .cloned()
+        .collect();
+    out.push("--elevated".into());
+    out
+}
+
+/// Échappement compatible avec la ligne de commande Windows utilisée par
+/// ShellExecuteW : les espaces et guillemets ne doivent pas changer le sens
+/// des options transmises.
+fn quote_windows_arg(arg: &str) -> String {
+    if !arg.is_empty() && !arg.chars().any(|c| c.is_whitespace() || c == '"') {
+        return arg.to_string();
+    }
+    let mut out = String::from("\"");
+    let mut slashes = 0usize;
+    for c in arg.chars() {
+        match c {
+            '\\' => slashes += 1,
+            '"' => {
+                out.push_str(&"\\".repeat(slashes * 2 + 1));
+                out.push('"');
+                slashes = 0;
+            }
+            _ => {
+                if slashes > 0 {
+                    out.push_str(&"\\".repeat(slashes));
+                    slashes = 0;
+                }
+                out.push(c);
+            }
+        }
+    }
+    if slashes > 0 {
+        out.push_str(&"\\".repeat(slashes * 2));
+    }
+    out.push('"');
+    out
+}
+
+fn elevated_params(args: &[String]) -> String {
+    elevated_args(args)
+        .iter()
+        .map(|a| quote_windows_arg(a))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn elevate_with_args(args: &[String]) -> bool {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let params = to_wide(&elevated_params(args));
     let verb = to_wide("runas");
     let file = to_wide(&exe.to_string_lossy());
     let h = unsafe {
@@ -902,15 +964,25 @@ fn parse_startup_id(id: &str) -> Option<(HKEY, String, String)> {
 // ---------------------------------------------------------------------------
 
 /// Chemin absolu d'un outil système. Ne jamais laisser Windows résoudre
-/// `schtasks.exe` ou `explorer.exe` depuis le répertoire courant ou le PATH.
-pub(crate) fn system32_path(name: &str) -> PathBuf {
-    let root = std::env::var("SystemRoot")
-        .or_else(|_| std::env::var("windir"))
-        .unwrap_or_else(|_| "C:\\Windows".into());
-    Path::new(&root).join("System32").join(name)
+/// `schtasks.exe` ou `explorer.exe` depuis le répertoire courant, le PATH ou
+/// une variable d'environnement héritée.
+pub(crate) fn system32_path(name: &str) -> Result<PathBuf, String> {
+    let mut buf = vec![0u16; 32_768];
+    let len = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as DWORD) };
+    if len == 0 {
+        return Err(format!(
+            "répertoire système introuvable : {}",
+            err_msg(last_error())
+        ));
+    }
+    if len as usize >= buf.len() {
+        return Err("répertoire système trop long".into());
+    }
+    buf.truncate(len as usize);
+    Ok(PathBuf::from(from_wide_buf(&buf)).join(name))
 }
 
-fn tasks_dir() -> PathBuf {
+fn tasks_dir() -> Result<PathBuf, String> {
     system32_path("Tasks")
 }
 
@@ -1018,7 +1090,10 @@ fn task_from_xml(xml: &str, path: &str) -> Option<TaskItem> {
 /// l'annuaire `System32\\Tasks` refuse de lire, sous forme de XML encadrés par
 /// des commentaires `<!-- \\Chemin -->`. L'analyse reste indépendante de la langue.
 fn tasks_from_schtasks_xml() -> Vec<TaskItem> {
-    let output = match std::process::Command::new(system32_path("schtasks.exe"))
+    let Ok(schtasks) = system32_path("schtasks.exe") else {
+        return Vec::new();
+    };
+    let output = match std::process::Command::new(schtasks)
         .args(["/query", "/xml"])
         .output()
     {
@@ -1075,7 +1150,13 @@ fn merge_tasks(primary: Vec<TaskItem>, fallback: Vec<TaskItem>) -> Vec<TaskItem>
 }
 
 fn collect_tasks(notes: &mut Vec<String>) -> Vec<TaskItem> {
-    let base = tasks_dir();
+    let base = match tasks_dir() {
+        Ok(base) => base,
+        Err(e) => {
+            notes.push(format!("tâches planifiées indisponibles : {e}"));
+            return Vec::new();
+        }
+    };
     let mut files = Vec::new();
     let mut denied = 0u32;
     walk_tasks(&base, &base, &mut files, &mut denied);
@@ -1548,7 +1629,9 @@ fn current_service_start(name: &str) -> Option<StartType> {
 
 fn run_schtasks(path: &str, enable: bool) -> Result<(), String> {
     let flag = if enable { "/enable" } else { "/disable" };
-    let out = std::process::Command::new(system32_path("schtasks.exe"))
+    let schtasks =
+        system32_path("schtasks.exe").map_err(|e| format!("schtasks introuvable : {e}"))?;
+    let out = std::process::Command::new(schtasks)
         .args(["/change", "/tn", path, flag])
         .output()
         .map_err(|e| format!("schtasks introuvable : {e}"))?;
@@ -1570,7 +1653,7 @@ fn run_schtasks(path: &str, enable: bool) -> Result<(), String> {
 }
 
 fn current_task_enabled(path: &str) -> Option<bool> {
-    let f = tasks_dir().join(path.trim_start_matches('\\'));
+    let f = tasks_dir().ok()?.join(path.trim_start_matches('\\'));
     let xml = std::fs::read_to_string(f).ok()?;
     let doc = roxmltree::Document::parse(&xml).ok()?;
     Some(
@@ -1747,13 +1830,20 @@ pub fn apply(actions: &[Action]) -> Vec<RollbackEntry> {
     entries
 }
 
-pub fn data_dir() -> PathBuf {
-    let base = std::env::var("LOCALAPPDATA")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".into());
-    let d = Path::new(&base).join("RamScope");
-    let _ = std::fs::create_dir_all(d.join("rollbacks"));
-    d
+pub fn data_dir() -> Result<PathBuf, String> {
+    let mut raw: LPWSTR = std::ptr::null_mut();
+    let hr = unsafe { SHGetKnownFolderPath(&FOLDERID_LOCALAPPDATA, 0, 0, &mut raw) };
+    if hr < 0 || raw.is_null() {
+        return Err(format!(
+            "dossier LocalAppData introuvable (HRESULT 0x{hr:08X})"
+        ));
+    }
+    let base = from_wide(raw);
+    unsafe { CoTaskMemFree(raw as *mut std::ffi::c_void) };
+    let d = PathBuf::from(base).join("RamScope");
+    std::fs::create_dir_all(d.join("rollbacks"))
+        .map_err(|e| format!("impossible de créer le dossier de données : {e}"))?;
+    Ok(d)
 }
 
 #[cfg(test)]
@@ -1785,14 +1875,92 @@ mod tests {
         task_from_xml(xml, path).expect("XML valide")
     }
 
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        old: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let old = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, old }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.old {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     #[test]
     fn chemins_des_outils_systeme_sont_absolus() {
-        let path = system32_path("schtasks.exe");
+        let path = system32_path("schtasks.exe").expect("répertoire système disponible");
         assert!(path.is_absolute());
         assert!(path
             .to_string_lossy()
             .to_lowercase()
             .ends_with("system32\\schtasks.exe"));
+    }
+
+    #[test]
+    fn systemroot_forge_ne_change_pas_le_chemin_systeme() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let normal = system32_path("schtasks.exe").expect("répertoire système disponible");
+        let _guard = EnvGuard::set("SystemRoot", r"C:\Temp\X");
+        let forged = system32_path("schtasks.exe").expect("répertoire système disponible");
+        assert_eq!(normal, forged);
+        assert!(!forged.starts_with(r"C:\Temp\X"));
+    }
+
+    #[test]
+    fn localappdata_forge_ne_change_pas_le_dossier_donnees() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let normal = data_dir().expect("dossier de données disponible");
+        let _guard = EnvGuard::set("LOCALAPPDATA", r"C:\Temp\X");
+        let forged = data_dir().expect("dossier de données disponible");
+        assert_eq!(normal, forged);
+        assert!(!forged.starts_with(r"C:\Temp\X"));
+    }
+
+    #[test]
+    fn elevation_conserve_les_options_et_retire_no_admin() {
+        let args: Vec<String> = [
+            "--port",
+            "8917",
+            "--host",
+            "localhost",
+            "--no-browser",
+            "--no-admin",
+            "--elevated",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let params = elevated_params(&args);
+        assert!(params.contains("--port 8917"));
+        assert!(params.contains("--host localhost"));
+        assert!(params.contains("--no-browser"));
+        assert!(!params.contains("--no-admin"));
+        assert_eq!(params.matches("--elevated").count(), 1);
+    }
+
+    #[test]
+    fn elevation_quote_les_arguments_avec_espaces() {
+        let arg = r"C:\Program Files\RamScope";
+        assert_eq!(quote_windows_arg(arg), r#""C:\Program Files\RamScope""#);
+        let params = elevated_params(&[arg.to_string(), "--port".into(), "8917".into()]);
+        assert!(params.starts_with(r#""C:\Program Files\RamScope""#));
+        assert!(params.ends_with("--elevated"));
     }
 
     #[test]

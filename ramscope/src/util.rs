@@ -77,22 +77,25 @@ pub fn new_id() -> String {
     format!("{:016x}", x as u64)
 }
 
-pub fn data_dir() -> PathBuf {
+pub fn data_dir() -> Result<PathBuf, String> {
     #[cfg(windows)]
-    let d = crate::win::data_dir();
+    {
+        crate::win::data_dir()
+    }
     #[cfg(not(windows))]
-    let d = {
+    {
         let p = PathBuf::from("ramscope-data");
-        let _ = std::fs::create_dir_all(p.join("rollbacks"));
-        p
-    };
-    d
+        std::fs::create_dir_all(p.join("rollbacks"))
+            .map_err(|e| format!("impossible de créer le dossier de données : {e}"))?;
+        Ok(p)
+    }
 }
 
-pub fn rollback_dir() -> PathBuf {
-    let d = data_dir().join("rollbacks");
-    let _ = std::fs::create_dir_all(&d);
-    d
+pub fn rollback_dir() -> Result<PathBuf, String> {
+    let d = data_dir()?.join("rollbacks");
+    std::fs::create_dir_all(&d)
+        .map_err(|e| format!("impossible de créer le dossier de restauration : {e}"))?;
+    Ok(d)
 }
 
 pub fn save_rollback(label: &str, entries: Vec<RollbackEntry>) -> Option<RollbackPoint> {
@@ -106,7 +109,7 @@ pub fn save_rollback(label: &str, entries: Vec<RollbackEntry>) -> Option<Rollbac
         label: label.to_string(),
         entries,
     };
-    let path = rollback_dir().join(format!("{id}.json"));
+    let path = rollback_dir().ok()?.join(format!("{id}.json"));
     match serde_json::to_vec_pretty(&point) {
         Ok(bytes) => {
             if std::fs::write(&path, bytes).is_ok() {
@@ -121,7 +124,10 @@ pub fn save_rollback(label: &str, entries: Vec<RollbackEntry>) -> Option<Rollbac
 
 pub fn list_rollbacks() -> Vec<RollbackPoint> {
     let mut out = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(rollback_dir()) {
+    let Ok(dir) = rollback_dir() else {
+        return out;
+    };
+    if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten() {
             if e.path().extension().map(|x| x == "json").unwrap_or(false) {
                 if let Ok(s) = std::fs::read_to_string(e.path()) {
@@ -140,13 +146,16 @@ pub fn get_rollback(id: &str) -> Option<RollbackPoint> {
     if !id.chars().all(|c| c.is_ascii_hexdigit()) || id.is_empty() {
         return None;
     }
-    let s = std::fs::read_to_string(rollback_dir().join(format!("{id}.json"))).ok()?;
+    let dir = rollback_dir().ok()?;
+    let s = std::fs::read_to_string(dir.join(format!("{id}.json"))).ok()?;
     serde_json::from_str(&s).ok()
 }
 
 pub fn delete_rollback(id: &str) {
     if id.chars().all(|c| c.is_ascii_hexdigit()) && !id.is_empty() {
-        let _ = std::fs::remove_file(rollback_dir().join(format!("{id}.json")));
+        if let Ok(dir) = rollback_dir() {
+            let _ = std::fs::remove_file(dir.join(format!("{id}.json")));
+        }
     }
 }
 
