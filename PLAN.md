@@ -92,7 +92,7 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | D15 | P1 | `report.rs` — `build()`, colonnes « Gain » | Le rapport exporté additionne gain immédiat et gain différé dans une même cellule (`gain + gain_next_boot`), pour les services comme pour le démarrage. Même vice que D3, dans l'export ; l'étape 3 cite le rapport dans son critère de sortie sans l'avoir à son périmètre. Le tri et le total de section de `web/app.js` (lignes 289 et 394-395) mélangent les mêmes deux gains. Corrigé à l'étape 3 (7.5) : colonnes séparées dans le rapport et l'interface, tri sur le gain immédiat |
 | D16 | P2 | `report.rs` — ligne « rien à optimiser » | « Rien à optimiser sans risque » emploie une formulation que l'étape 5 bannit, hors du périmètre de son contrôle (limité à `src/web/`). À corriger à l'étape 3 avec le reste du rapport ; l'étape 5 n'en assurera que la garde de régression. La justification `rules.rs` « Désactivable sans risque » est conservée : elle qualifie un élément précis, pas une sélection de masse. Corrigé à l'étape 3 (7.5) : « Rien à optimiser : configuration déjà saine » |
 | D18 | P2 | `web/app.js` — fermeture du fond de modale | Un clic sur un bouton qui ouvre une modale après un appel réseau (export) peut être reçu par le masque apparu entre l'appui et le relâchement : la modale s'ouvre puis se referme aussitôt. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : fermeture seulement si l'appui a commencé sur le fond ; test `le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite` |
-| D19 | P2 | `web/style.css` — media query petit écran | À 390 px de large, `.hero` conservait une première colonne de 320 px et des cartes de 150 px : la grille dépassait la fenêtre et la deuxième carte était coupée. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : `.hero` sur une colonne, machine pleine largeur et chemins d'export coupés ; capture `ramscope-step5-mobile-fixed.png` |
+| D19 | P2 | `web/style.css` — media query petit écran | À 390 px de large, `.hero` conservait une première colonne de 320 px et des cartes de 150 px : la grille dépassait la fenêtre et la deuxième carte était coupée. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : `.hero` sur une colonne, machine pleine largeur et chemins d'export coupés ; capture `docs/evidence/ramscope-step5-mobile-fixed.png` |
 | D20 | P2 | `win.rs` — `collect_tasks` | En lecture seule, `C:\\Windows\\System32\\Tasks` est refusé par les ACL : l'interface affichait 0 tâche alors que Windows en expose 201. Observé à la recette de l'étape 6. Corrigé à l'étape 6 (7.8) : repli sur `schtasks /query /xml`, même analyse XML, test `decode_une_tache_xml` ; 201 tâches et 167 activées retrouvées, identiques à `Get-ScheduledTask` |
 | D21 | P2 | `win.rs` — `tasks_from_schtasks_xml`, `run_schtasks` | L'outil est résolu par son nom (`Command::new("schtasks.exe")`). Sous Windows, un `schtasks.exe` placé dans le répertoire courant ou le `PATH` peut être exécuté à la place de l'outil système, y compris pendant une collecte en lecture seule. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.1) : chemin absolu via `system32_path`, test `chemins_des_outils_systeme_sont_absolus`. |
 | D22 | P2 | `win.rs` — `collect_tasks` | Le repli `schtasks` n'est déclenché que si `out.is_empty()`. Si un seul fichier XML reste lisible et que les autres sont refusés, la liste est silencieusement partielle. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.2) : repli dès qu'une lecture est refusée, fusion par chemin, déduplication ; tests `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon`. |
@@ -503,7 +503,7 @@ La revue a exercé les parcours charger, filtrer, sélectionner, confirmer, appl
 
 Limites : la restauration et l'export ont été exercés en mode démonstration ; le contenu des deux fichiers exportés n'a pas été rouvert. La navigation clavier n'a pas été parcourue avec de vraies frappes dans ce navigateur : les gestionnaires ont été sollicités par événements synthétiques. Le rendu a été regardé à 1600 × 900 et 390 × 844, pas sur d'autres tailles ni avec un lecteur d'écran. Aucun contraste n'a été mesuré sur une capture, seulement calculé à partir des couleurs du thème. La CSP n'a pas été resserrée : `'unsafe-inline'` reste nécessaire pour les styles et un gestionnaire inline (`elevate()`), ce point reste ouvert.
 
-Captures : `ramscope-step5-final-2026-11-14.png` (bureau), `ramscope-step5-mobile-fixed.png` (390 px), `ramscope-step5-export-mobile.png` (export), `ramscope-step5-confirm.png` (lot réversible), `ramscope-step5-applied.png` (application 1/1), `ramscope-step5-kill.png` (`Kill` seul) et `ramscope-step5-restored.png` (restauration).
+Captures versionnées dans `docs/evidence/` : `ramscope-step5-final-2026-11-14.png` (bureau), `ramscope-step5-mobile-fixed.png` (390 px), `ramscope-step5-export-mobile.png` (export), `ramscope-step5-confirm.png` (lot réversible), `ramscope-step5-applied.png` (application 1/1), `ramscope-step5-kill.png` (`Kill` seul) et `ramscope-step5-restored.png` (restauration). L'index et les empreintes sont dans `docs/evidence/README.md` et `docs/evidence/SHA256SUMS`.
 
 ### 7.8 Étape 6 — recette finale (2026-11-14)
 
@@ -588,6 +588,17 @@ Les tests ajoutés sont `chemins_des_outils_systeme_sont_absolus`, `le_repli_cou
 
 Le script inline qui posait `window.RAMSCOPE_TOKEN` a été supprimé : le jeton est maintenant lu dans `meta[name="ramscope-token"]`, et le bouton « Passer en administrateur » est lié par `#btnElevate` dans `app.js`. Les styles inline restent nombreux (largeurs de jauges, couleurs de points) et justifient `style-src 'unsafe-inline'` ; `script-src` n'a plus besoin de cette exception. Le bouton d'élévation n'a pas été cliqué : en démonstration il n'est pas affiché, et un clic réel déclencherait UAC. Aucune action réelle n'a été appliquée.
 
+### 7.13 Lot 8.5 — preuves versionnées (2026-11-14)
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `file docs/evidence/*.png` | 0 | sept fichiers reconnus comme PNG 1600 × 900, 8 bits RGB |
+| `sha256sum -c docs/evidence/SHA256SUMS` | 0 | sept fichiers OK |
+| `du -sh docs/evidence` | 0 | 1,3 Mo au total |
+| `git diff --check` | 0 | aucune erreur d'espacement |
+
+Les captures ont été déplacées du répertoire racine vers `docs/evidence/` sans modification de contenu ; un index `README.md` précise qu'elles viennent de la démonstration et un manifeste `SHA256SUMS` fige leurs empreintes. Les images n'ont pas été rouvertes visuellement pendant ce lot. Aucun test Rust n'a été relancé : aucun fichier de code n'a changé. Après commit, `git status --short` ne doit plus montrer que les artefacts explicitement ignorés.
+
 ### Avancement
 
 | Étape | État | Défauts traités | Vérification consignée |
@@ -599,13 +610,13 @@ Le script inline qui posait `window.RAMSCOPE_TOKEN` a été supprimé : le jeton
 | 4 — Règles et provenance | terminée avec écart 602→601 documenté (2026-11-13) | D7, D9, D10, D11, D17 | voir 7.6 |
 | 5 — Interface de décision | terminée (2026-11-14) | D8 (volet interface), D18, D19 | voir 7.7 |
 | 6 — Recette et documentation | terminée (2026-11-14) | D20 | voir 7.8 |
-| Lot de clôture — durcissement | partiel : 8.1 à 8.4 terminés (2026-11-14), 8.5 à faire | D21, D22, D23 | voir 7.10 à 7.12 et 8 |
+| Lot de clôture — durcissement | terminé : 8.1 à 8.5 (2026-11-14) | D21, D22, D23 | voir 7.10 à 7.13 et 8 |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.
 
 ## 8. Après livraison — lot de clôture
 
-Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. **8.1 à 8.4 sont terminés le 2026-11-14** (contrôles en 7.10 à 7.12) ; 8.5 clôt le dossier.
+Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. **8.1 à 8.5 sont terminés le 2026-11-14** (contrôles en 7.10 à 7.13) ; le lot de clôture est complet.
 
 ### 8.1 Chemins absolus des outils externes (D21) — P2, 0,25 jour — terminé
 
@@ -643,11 +654,13 @@ Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune éta
 
 **État (2026-11-14).** Terminé : `script-src 'self'`, zéro script inline, zéro gestionnaire HTML inline, jeton lu depuis la meta, bouton d'élévation lié dans `app.js` ; test `la_csp_n_autorise_pas_le_script_inline` ; démonstration chargée avec 155 nœuds et aucune erreur console. Voir 7.12.
 
-### 8.5 Preuves et versionnage — P3, 0,1 jour
+### 8.5 Preuves et versionnage — P3, 0,1 jour — terminé
 
-**Changement.** Soit versionner les captures sous `docs/evidence/`, soit retirer leur référence du journal et les déclarer locales. Vérifier que 7.7 et 7.8 citent bien `c4fc786` et `6dfbaa2` (fait), puis que le prochain lot respecte « un commit par étape ».
+**Changement.** Versionner les sept captures de l'étape 5 sous `docs/evidence/`, avec un index et un manifeste `SHA256SUMS`. Vérifier que 7.7 et 7.8 citent bien `c4fc786` et `6dfbaa2`, puis que le prochain lot respecte « un commit par étape ».
 
 **Critère de sortie.** `git status --short` ne montre que des fichiers explicitement ignorés ou versionnés ; le journal cite le hash du commit de chaque étape.
+
+**État (2026-11-14).** Terminé : sept PNG valides (1600 × 900) déplacés dans `docs/evidence/`, index `README.md`, manifeste `SHA256SUMS` vérifié par `sha256sum -c` (code retour 0). Les captures n'ont pas été rouvertes visuellement pendant ce lot. Voir 7.13.
 
 ## 9. Hors périmètre
 
