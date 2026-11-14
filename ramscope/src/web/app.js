@@ -1,7 +1,7 @@
 /* RamScope — interface (vanilla JS, aucune dépendance externe) */
 'use strict';
 
-const TOKEN = window.RAMSCOPE_TOKEN;
+const TOKEN = document.querySelector('meta[name="ramscope-token"]')?.content || '';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
@@ -210,9 +210,20 @@ function renderHead() {
   let n = (m.notes || []).map(x => `<div class="note">${esc(x)}</div>`).join('');
   if (!m.is_admin) {
     n += `<div class="note">Pour appliquer les changements, RamScope doit tourner en administrateur.
-      <button class="btn warn sm" style="margin-left:8px" onclick="elevate()">Passer en administrateur</button></div>`;
+      <button class="btn warn sm ml8" id="btnElevate">Passer en administrateur</button></div>`;
   }
   $('#notes').innerHTML = n;
+  const be = $('#btnElevate');
+  if (be) be.onclick = async () => {
+    be.disabled = true;
+    try {
+      await api('/api/elevate', {});
+      toast('RamScope redémarre en administrateur…', 'ok');
+    } catch (e) {
+      be.disabled = false;
+      toast('Élévation impossible : ' + esc(e.message), 'ko');
+    }
+  };
 }
 
 function renderHero() {

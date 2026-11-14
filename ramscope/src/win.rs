@@ -1020,6 +1020,13 @@ fn tasks_from_schtasks_xml() -> Vec<TaskItem> {
         Err(_) => return Vec::new(),
     };
     let text = String::from_utf8_lossy(&output.stdout);
+    tasks_from_schtasks_output(&text)
+}
+
+/// Transforme la sortie de `schtasks /query /xml` en tâches. Séparé de
+/// l'exécution pour pouvoir le tester sans lancer un processus ni toucher
+/// aux tâches réelles de la machine.
+fn tasks_from_schtasks_output(text: &str) -> Vec<TaskItem> {
     let mut out = Vec::new();
     for block in text.split("<!--").skip(1) {
         let Some((comment, rest)) = block.split_once("-->") else {
@@ -1797,5 +1804,27 @@ mod tests {
         let merged = merge_tasks(direct, fallback);
         let paths: Vec<&str> = merged.iter().map(|t| t.path.as_str()).collect();
         assert_eq!(paths, vec!["\\A", "\\B", "\\C"]);
+    }
+
+    #[test]
+    fn decode_la_sortie_de_schtasks() {
+        let xml = r#"
+<!-- \Demo\Active -->
+<Task version="1.2">
+  <Settings><Enabled>true</Enabled></Settings>
+  <Actions><Exec><Command>cmd.exe</Command><Arguments>/c echo actif</Arguments></Exec></Actions>
+</Task>
+<!-- \Demo\Inactive -->
+<Task version="1.2">
+  <Settings><Enabled>false</Enabled></Settings>
+  <Actions><Exec><Command>cmd.exe</Command></Exec></Actions>
+</Task>"#;
+        let tasks = tasks_from_schtasks_output(xml);
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].path, "\\Demo\\Active");
+        assert!(tasks[0].enabled);
+        assert_eq!(tasks[0].command, "cmd.exe /c echo actif");
+        assert_eq!(tasks[1].path, "\\Demo\\Inactive");
+        assert!(!tasks[1].enabled);
     }
 }

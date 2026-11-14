@@ -13,10 +13,10 @@ const INDEX: &str = include_str!("web/index.html");
 const APPJS: &str = include_str!("web/app.js");
 const CSS: &str = include_str!("web/style.css");
 
-/// L'interface utilise des styles et un gestionnaire inline : `unsafe-inline`
-/// est requis tant que l'étape 5 n'a pas supprimé ces attributs. Le reste du
-/// CSP limite les chargements à l'origine et interdit le cadrage.
-const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; \
+/// Le script est désormais entièrement externe : `script-src` n'autorise que
+/// l'origine. Les styles inline restent nécessaires aux largeurs et couleurs
+/// calculées dans les cartes ; `style-src` conserve donc `unsafe-inline`.
+const CSP: &str = "default-src 'self'; script-src 'self'; \
 style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; \
 frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
@@ -25,7 +25,6 @@ pub struct App {
     pub token: String,
     pub cache: Mutex<Option<(Instant, Snapshot)>>,
     pub stop: AtomicBool,
-    pub url: String,
     /// Hôtes exacts que cette session accepte (`127.0.0.1:<port>`,
     /// `localhost:<port>`). Tout autre `Host` est refusé, pages comprises.
     pub allowed_hosts: Vec<String>,
@@ -160,9 +159,7 @@ fn handle(app: &App, mut req: Request) {
     if method == Method::Get {
         match path.as_str() {
             "/" | "/index.html" => {
-                let html = INDEX
-                    .replace("__TOKEN__", &app.token)
-                    .replace("__URL__", &app.url);
+                let html = INDEX.replace("__TOKEN__", &app.token);
                 return send(req, 200, "text/html; charset=utf-8", html);
             }
             "/app.js" => {
@@ -427,7 +424,6 @@ pub fn serve(host: &str, port: u16, demo: bool, open_browser: bool) -> std::io::
         token: util::new_id() + &util::new_id(),
         cache: Mutex::new(None),
         stop: AtomicBool::new(false),
-        url: url.clone(),
         allowed_hosts,
     });
 
@@ -617,6 +613,22 @@ mod tests {
             ),
             "ancienne fermeture sur clic retargeté réintroduite"
         );
+    }
+
+    #[test]
+    fn la_csp_n_autorise_pas_le_script_inline() {
+        assert!(!CSP.contains("script-src 'self' 'unsafe-inline'"));
+        assert!(CSP.contains("script-src 'self';"));
+        let html = include_str!("web/index.html");
+        assert!(!html.contains("onclick="));
+        assert!(!html.contains("<script>"));
+        assert!(!html.contains("__URL__"));
+        assert!(html.contains("name=\"ramscope-token\""));
+        let js = include_str!("web/app.js");
+        assert!(js.contains("meta[name=\"ramscope-token\"]"));
+        assert!(!js.contains("onclick=\""));
+        assert!(js.contains("id=\"btnElevate\""));
+        assert!(js.contains("api('/api/elevate'"));
     }
 
     #[test]

@@ -37,9 +37,9 @@ Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification 
 
 | Élément | Constat révisé (2026-11-14) |
 |---|---|
-| Volume | 7 823 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 801, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 628, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
+| Volume | 7 875 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 203) : `win.rs` 1 830, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 884, `server.rs` 640, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
 | Base de règles | 601 règles : 261 services, 197 processus, 93 entrées de démarrage, 50 tâches. Le plan annonçait 602 ; l'audit de l'étape 4 a révélé le doublon `eventsystem` / `eventsysevent`, fusionné (7.6) |
-| Tests | 41 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 4 dans `win.rs` ; `cargo test` code retour 0 sur les quarante et une, consigné au journal (7.10) |
+| Tests | 43 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 10 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 5 dans `win.rs` ; `cargo test` code retour 0 sur les quarante-trois, consigné au journal (7.12) |
 | `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
 | `cargo clippy` | **code retour 0** : `cargo clippy --all-targets -- -D warnings`, consigné au journal (7.6) |
 | Build release | **code retour 0** : binaire produit, consigné au journal (7.6) |
@@ -96,9 +96,9 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | D20 | P2 | `win.rs` — `collect_tasks` | En lecture seule, `C:\\Windows\\System32\\Tasks` est refusé par les ACL : l'interface affichait 0 tâche alors que Windows en expose 201. Observé à la recette de l'étape 6. Corrigé à l'étape 6 (7.8) : repli sur `schtasks /query /xml`, même analyse XML, test `decode_une_tache_xml` ; 201 tâches et 167 activées retrouvées, identiques à `Get-ScheduledTask` |
 | D21 | P2 | `win.rs` — `tasks_from_schtasks_xml`, `run_schtasks` | L'outil est résolu par son nom (`Command::new("schtasks.exe")`). Sous Windows, un `schtasks.exe` placé dans le répertoire courant ou le `PATH` peut être exécuté à la place de l'outil système, y compris pendant une collecte en lecture seule. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.1) : chemin absolu via `system32_path`, test `chemins_des_outils_systeme_sont_absolus`. |
 | D22 | P2 | `win.rs` — `collect_tasks` | Le repli `schtasks` n'est déclenché que si `out.is_empty()`. Si un seul fichier XML reste lisible et que les autres sont refusés, la liste est silencieusement partielle. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.2) : repli dès qu'une lecture est refusée, fusion par chemin, déduplication ; tests `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon`. |
-| D23 | P2 | `web/app.js`, `web/index.html`, `server.rs` — CSP | La CSP conserve `'unsafe-inline'` pour les styles et un gestionnaire inline (`elevate()`). L'étape 1 annonçait un resserrage à l'étape 5, qui n'a pas été fait. Découvert par la revue post-livraison. **Ouvert** : supprimer le gestionnaire inline restant, passer `script-src` à `'self'`, puis vérifier l'interface en démonstration ; voir 8. |
+| D23 | P2 | `web/app.js`, `web/index.html`, `server.rs` — CSP | La CSP conservait `'unsafe-inline'` pour les styles et un gestionnaire inline (`elevate()`). L'étape 1 annonçait un resserrage à l'étape 5, qui n'a pas été fait. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.4) : script inline supprimé, jeton dans une meta, écouteur `btnElevate` dans `app.js`, `script-src 'self'` ; `style-src 'unsafe-inline'` reste justifié par les styles calculés. |
 
-D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8). D21 et D22 sont corrigés par le lot 8 (7.10). D23 reste ouvert et inscrit au lot de clôture (section 8).
+D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8). D21 et D22 sont corrigés par le lot 8 (7.10). D23 est corrigé par le lot 8.4 (7.12).
 
 ## 4. Étapes
 
@@ -288,7 +288,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 ### Étape 6 — Recette et documentation
 
-**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape. La revue post-livraison a ouvert D21–D23 ; D21 et D22 sont corrigés par le lot 8.1/8.2 (7.10), D23 reste ouvert (section 8).
+**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape. La revue post-livraison a ouvert D21–D23 ; D21 et D22 sont corrigés par le lot 8.1/8.2 (7.10), D23 par le lot 8.4 (7.12).
 
 **Objectif.** Livrer avec des preuves, pas avec des promesses.
 
@@ -561,6 +561,33 @@ Verdict : le socle fonctionnel reste livré, mais aucune nouvelle étape fonctio
 
 Les tests ajoutés sont `chemins_des_outils_systeme_sont_absolus`, `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon`. Le test de fusion utilise deux tâches directes et deux tâches de repli, dont un doublon de casse : la tâche directe est conservée et le chemin n'apparaît qu'une fois. Le cas ACL partielle est testé au niveau de la décision de repli et de la fusion, pas en injectant une ACL Windows réelle. Aucune action réelle n'a été appliquée ; le serveur réel a été arrêté après la mesure, puis la démonstration a été relancée sur `http://127.0.0.1:8876`.
 
+### 7.11 Lot 8.3 — contrôles exécutés (2026-11-14)
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence |
+| `cargo test` | 0 | 42 tests, 42 réussis ; `decode_la_sortie_de_schtasks` ajouté |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9,57 s |
+| Réel — trois collectes `--no-admin` | 200 | 833, 769 et 810 ms ; 201 tâches, 167 activées, zéro doublon à chaque fois |
+| Démo après mesure | 200 | serveur relancé sur `http://127.0.0.1:8876` |
+
+`tasks_from_schtasks_output` transforme désormais une sortie `schtasks` en tâches sans lancer de processus ; `tasks_from_schtasks_xml` ne fait plus que l'exécution et l'appel. La fixture contient deux blocs `<!-- \Chemin -->`, dont un avec `<Enabled>false</Enabled>` : les deux chemins, l'état activé/désactivé et la commande sont vérifiés. Le wrapper est testé sur une fixture, pas sur une sortie réelle de `schtasks` en échec. Aucune action réelle n'a été appliquée. La collecte reste sous le budget de 1,5 s : aucun cache n'a été ajouté.
+
+### 7.12 Lot 8.4 — contrôles exécutés (2026-11-14)
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence |
+| `cargo test` | 0 | 43 tests, 43 réussis ; test CSP ajouté |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9,63 s |
+| `GET /` | 200 | en-tête `script-src 'self'`, zéro script inline, une meta de jeton |
+| Démo Chromium | 200 | `#badges` affiche « DÉMO Administrateur », chargement terminé, 155 nœuds, zéro gestionnaire inline, console vide |
+| `GET /api/health` | 200 | `demo=true` |
+
+Le script inline qui posait `window.RAMSCOPE_TOKEN` a été supprimé : le jeton est maintenant lu dans `meta[name="ramscope-token"]`, et le bouton « Passer en administrateur » est lié par `#btnElevate` dans `app.js`. Les styles inline restent nombreux (largeurs de jauges, couleurs de points) et justifient `style-src 'unsafe-inline'` ; `script-src` n'a plus besoin de cette exception. Le bouton d'élévation n'a pas été cliqué : en démonstration il n'est pas affiché, et un clic réel déclencherait UAC. Aucune action réelle n'a été appliquée.
+
 ### Avancement
 
 | Étape | État | Défauts traités | Vérification consignée |
@@ -572,13 +599,13 @@ Les tests ajoutés sont `chemins_des_outils_systeme_sont_absolus`, `le_repli_cou
 | 4 — Règles et provenance | terminée avec écart 602→601 documenté (2026-11-13) | D7, D9, D10, D11, D17 | voir 7.6 |
 | 5 — Interface de décision | terminée (2026-11-14) | D8 (volet interface), D18, D19 | voir 7.7 |
 | 6 — Recette et documentation | terminée (2026-11-14) | D20 | voir 7.8 |
-| Lot de clôture — durcissement | partiel : 8.1 et 8.2 terminés (2026-11-14), 8.3 à 8.5 à faire | D21, D22 | voir 7.10 et 8 |
+| Lot de clôture — durcissement | partiel : 8.1 à 8.4 terminés (2026-11-14), 8.5 à faire | D21, D22, D23 | voir 7.10 à 7.12 et 8 |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.
 
 ## 8. Après livraison — lot de clôture
 
-Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. **8.1 et 8.2 sont terminés le 2026-11-14** (contrôles en 7.10) ; 8.3 reste obligatoire avant une distribution ; 8.4 peut suivre ; 8.5 clôt le dossier.
+Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. **8.1 à 8.4 sont terminés le 2026-11-14** (contrôles en 7.10 à 7.12) ; 8.5 clôt le dossier.
 
 ### 8.1 Chemins absolus des outils externes (D21) — P2, 0,25 jour — terminé
 
@@ -600,17 +627,21 @@ Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune éta
 
 **État (2026-11-14).** Terminé : `needs_task_fallback` couvre la liste vide et les lectures refusées ; `merge_tasks` fusionne par chemin insensible à la casse et déduplique ; tests `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon` ; snapshot réel sans doublon. Voir 7.10.
 
-### 8.3 Test du wrapper et budget de collecte (D22) — P2, 0,25 jour
+### 8.3 Test du wrapper et budget de collecte (D22) — P2, 0,25 jour — terminé
 
-**Changement.** Extraire la transformation « sortie `schtasks` → tâches » dans une fonction testable, puis la couvrir avec une fixture de deux tâches, dont une désactivée. Mesurer la collecte réelle : budget accepté **≤ 1,5 s** en lecture seule ; au-delà, mettre en cache la liste des tâches pour 60 s ou documenter le dépassement. La mesure de 7.10 (806 ms) est dans le budget, mais le wrapper lui-même n'est pas encore couvert.
+**Changement.** Extraire la transformation « sortie `schtasks` → tâches » dans une fonction testable, puis la couvrir avec une fixture de deux tâches, dont une désactivée. Mesurer la collecte réelle : budget accepté **≤ 1,5 s** en lecture seule ; au-delà, mettre en cache la liste des tâches pour 60 s ou documenter le dépassement.
 
 **Critère de sortie.** Test nommé du wrapper ; `meta.duration_ms` consigné sur trois collectes réelles ; aucun dépassement silencieux du budget.
 
-### 8.4 Resserrer la CSP (D23) — P2, 0,5 jour
+**État (2026-11-14).** Terminé : `tasks_from_schtasks_output` est séparé de l'exécution ; test `decode_la_sortie_de_schtasks` avec deux tâches, dont une désactivée ; trois collectes réelles à 833, 769 et 810 ms, sous le budget ; aucun cache ajouté. Voir 7.11.
 
-**Changement.** Supprimer le gestionnaire inline `onclick="elevate()"` et les styles inline restants, brancher l'action par un écouteur ajouté dans `app.js`, puis passer `script-src` à `'self'` sans `'unsafe-inline'`. Conserver `style-src` uniquement si un style inline légitime subsiste, et le justifier.
+### 8.4 Resserrer la CSP (D23) — P2, 0,5 jour — terminé
 
-**Critère de sortie.** `grep -n 'onclick=\|style=' src/web/index.html src/web/app.js` → aucun résultat non justifié ; en-tête CSP servi sans `'unsafe-inline'` pour les scripts ; chargement Chromium sans erreur console ; parcours démo charger → sélectionner → confirmer → annuler encore fonctionnel.
+**Changement.** Supprimer le script inline qui portait le jeton, déplacer le jeton dans une meta et le gestionnaire `onclick="elevate()"` vers un écouteur de `app.js`, puis passer `script-src` à `'self'` sans `'unsafe-inline'`. Les styles inline restent nécessaires aux largeurs et couleurs calculées ; `style-src 'unsafe-inline'` est conservé et justifié.
+
+**Critère de sortie.** `grep -n 'onclick=' src/web/index.html src/web/app.js` → aucun résultat ; en-tête CSP servi sans `'unsafe-inline'` pour les scripts ; chargement Chromium sans erreur console ; parcours démo charger → sélectionner → confirmer → annuler encore fonctionnel.
+
+**État (2026-11-14).** Terminé : `script-src 'self'`, zéro script inline, zéro gestionnaire HTML inline, jeton lu depuis la meta, bouton d'élévation lié dans `app.js` ; test `la_csp_n_autorise_pas_le_script_inline` ; démonstration chargée avec 155 nœuds et aucune erreur console. Voir 7.12.
 
 ### 8.5 Preuves et versionnage — P3, 0,1 jour
 
