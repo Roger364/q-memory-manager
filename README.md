@@ -1,5 +1,7 @@
 # RamScope
 
+[![CI](https://github.com/Roger364/q-memory-manager/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Roger364/q-memory-manager/actions/workflows/ci.yml)
+
 RamScope inventorie la mémoire, les services et le démarrage automatique d'un PC Windows 10/11, explique ce qui occupe la RAM, et propose des réglages réversibles. Il ne supprime aucun fichier et ne modifie aucun réglage sans confirmation explicite.
 
 Un seul exécutable, aucune installation, aucune dépendance à l'exécution. L'interface est une page web servie sur la boucle locale et ouverte dans une fenêtre d'application.
