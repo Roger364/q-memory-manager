@@ -2,7 +2,7 @@
 
 Objectif : rendre l'inventaire mémoire et les conseils de démarrage plus exacts, compréhensibles et prudents, sans transformer RamScope en nettoyeur automatique. Toute modification doit rester réversible, explicite, et ne doit jamais se baser sur un seul nom de processus ou un seuil de RAM.
 
-Ce document est la version 3.1 du plan. La version 2 corrigeait la version 1, dont l'étape 0 annonçait comme livrés un README de présentation et un `SAFETY.md` qui n'existaient pas dans le dépôt. Un plan qui déclare terminé ce qui n'existe pas ne peut pas servir de référence : la règle de véracité ci-dessous existe pour empêcher que cela se reproduise.
+Ce document est la version 3.2 du plan. La version 2 corrigeait la version 1, dont l'étape 0 annonçait comme livrés un README de présentation et un `SAFETY.md` qui n'existaient pas dans le dépôt. Un plan qui déclare terminé ce qui n'existe pas ne peut pas servir de référence : la règle de véracité ci-dessous existe pour empêcher que cela se reproduise.
 
 La version 3 (2026-11-13, audit du code contre le registre) apporte cinq amendements : (1) le versionnage : à l'audit, seul `README.md` était suivi par git, le projet et ce plan étaient hors de tout versionnage — un commit de baseline (`e5198a9`) existe désormais et sert de référence à la section 1 ; (2) l'agrégation des gains par hôte est précisée partout avec la même sémantique — somme des parts plafonnée à la RAM de l'hôte — car le critère de sortie de l'étape 3 se contredisait sur ce point ; (3) deux défauts du rapport exporté sont enregistrés (`D15`, `D16`) ; (4) la section 1 est révisée, datée et épinglée au commit de baseline ; (5) le décompte de règles inclut la table `PROCESSES` (602 règles, pas 405 ; 601 après fusion du doublon `eventsystem`/`eventsysevent` à l'étape 4, voir 7.6).
 
@@ -39,14 +39,14 @@ Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification 
 |---|---|
 | Volume | 7 875 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 203) : `win.rs` 1 830, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 884, `server.rs` 640, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
 | Base de règles | 601 règles : 261 services, 197 processus, 93 entrées de démarrage, 50 tâches. Le plan annonçait 602 ; l'audit de l'étape 4 a révélé le doublon `eventsystem` / `eventsysevent`, fusionné (7.6) |
-| Tests | 43 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 10 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 5 dans `win.rs` ; `cargo test` code retour 0 sur les quarante-trois, consigné au journal (7.12) |
+| Tests | 43 fonctions de test : 13 dans `plan.rs`, 12 dans `rules.rs`, 10 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 5 dans `win.rs` ; `cargo test` code retour 0 sur les quarante-trois, consigné au journal (7.12) |
 | `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
 | `cargo clippy` | **code retour 0** : `cargo clippy --all-targets -- -D warnings`, consigné au journal (7.6) |
 | Build release | **code retour 0** : binaire produit, consigné au journal (7.6) |
 | Rapport présent | `ramscope/ramscope-data/rapports/ramscope-2026-11-13-19-14-44.json` porte `"demo": true` : ce sont des données simulées, pas une mesure de la machine |
 | `README.md` | réécrit à l'étape 0 ; `Host`, origine et jeton sont couverts par des tests nommés dans `server.rs`. La validation serveur et les garde-fous moteur sont décrits (deux verrous, étape 2) ; les gains typés (étape 3), le cadenas distinct du niveau et la provenance de famille (étape 4), puis l'interface de décision (étape 5) et la recette réelle en lecture seule (étape 6) sont documentés |
 | `SAFETY.md` | créé à l'étape 0 ; complété par les limites des gains typés (étape 3), la séparation verrou/gravité et les limites de provenance des règles (étape 4), puis les garde-fous de sélection (étape 5) et la lecture des tâches sans administrateur (étape 6) |
-| Versionnage | avant le commit de baseline : un seul fichier suivi (`README.md`) ; remote configuré (`lupeka1/q-memory-manager`), rien poussé |
+| Versionnage | avant le commit de baseline : un seul fichier suivi (`README.md`) ; remote réel (`Roger364/q-memory-manager`) ; l'ancienne mention de dépôt était erronée et a été corrigée le 2026-11-14 |
 | Compilation Windows | `cargo test` compile `win.rs` : la cible Windows est vérifiable ici. Seule l'application réelle des actions demande une VM ou un instantané |
 
 Conséquence de méthode : la vérification n'est plus regroupée en fin de parcours. Chaque étape se termine par son propre contrôle, et `cargo fmt --check` doit repasser à 0 dès l'étape 0 — sinon l'étape 6 échouerait après six étapes de travail non validées.
@@ -369,7 +369,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 ### 7.0 Point de référence (2026-11-14, 00 h 01)
 
-Commit `e5198a9` — « Baseline : rien du projet n'était versionné » : `ramscope/`, ce plan, `README.md` et `SAFETY.md` versionnés (20 fichiers, 7 556 lignes), avec `.gitignore` excluant les artefacts de build, les données d'exécution machine et les espaces de travail des agents. Avant ce commit, git ne suivait qu'un `README.md` de deux lignes : aucun point de retour n'existait pour les tests de réversion, et l'état d'avant l'étape 0 n'est pas reconstructible. Le commit est postérieur aux étapes 0 et 1 : c'est un point de contrôle, pas une baseline d'avant l'étape 0, et il ne permet pas de rejouer leur test de réversion. Remote configuré (`lupeka1/q-memory-manager`), push non effectué — décision de Ro, après rafraîchissement des identifiants `gh` (401 constaté).
+Commit `e5198a9` — « Baseline : rien du projet n'était versionné » : `ramscope/`, ce plan, `README.md` et `SAFETY.md` versionnés (20 fichiers, 7 556 lignes), avec `.gitignore` excluant les artefacts de build, les données d'exécution machine et les espaces de travail des agents. Avant ce commit, git ne suivait qu'un `README.md` de deux lignes : aucun point de retour n'existait pour les tests de réversion, et l'état d'avant l'étape 0 n'est pas reconstructible. Le commit est postérieur aux étapes 0 et 1 : c'est un point de contrôle, pas une baseline d'avant l'étape 0, et il ne permet pas de rejouer leur test de réversion. Remote réel (`Roger364/q-memory-manager`) ; l'affirmation « push non effectué » était fausse : un push initial existait déjà sur `origin/main`. Les commits locaux ont ensuite dépassé le distant ; correction consignée en section 11.
 
 ### 7.1 Étape 0 — contrôles exécutés (2026-11-13)
 
@@ -697,3 +697,17 @@ grep -rn "150 \* 1024 \* 1024\|60 \* 1024 \* 1024\|40 \* 1024 \* 1024" src/
 ```
 
 Rappel : aucune de ces commandes ne doit être présentée comme exécutée avant de l'être. Le journal est la seule source de vérité sur ce point.
+
+## 11. Correction documentaire et synchronisation (2026-11-14)
+
+La revue WorkBuddy a été rédigée sur `d08e412`, puis commitée sous `ecccadc`. Elle signalait à juste titre que `PLAN.md` citait un ancien remote erroné, un décompte de tests inversé et un push non effectué. Les vérifications suivantes ont été exécutées :
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `git remote -v` | 0 | `origin` = `https://github.com/Roger364/q-memory-manager.git` |
+| `git ls-remote origin HEAD` | 0 | `03bed3e` avant le push du lot 9 |
+| `gh repo view <ancien-dépôt>` | 1 | `404 Not Found` : l'ancien dépôt n'existe plus |
+| Recherche de l'ancienne URL dans `.git` | 1 | aucune trace dans la configuration ou les références Git |
+| `cargo test -- --list` (dans `ramscope/`) | 0 | 43 tests : 13 dans `plan.rs`, 12 dans `rules.rs` |
+
+La version du plan est corrigée en **3.2**, le décompte des tests est remis dans le bon ordre, et les mentions de l'ancien dépôt ont été retirées de la documentation. Le plan d'améliorations proposé est séparé dans `PLAN-LOT9.md` pour ne pas mélanger le journal historique et le travail à venir. Le push du lot 9 clôt cette correction en fast-forward.

@@ -110,7 +110,7 @@ Volume mesuré : **7 875 lignes Rust + JS** (`win.rs` 1 830, `rules.rs` 1 365, `
 
 ### P3-1 — Documentation d'état périmée et absence de sauvegarde distante
 
-**Preuve.** `PLAN.md:49` et `PLAN.md:372` citent le remote `lupeka1/q-memory-manager` et « rien poussé ». Le remote réel est `https://github.com/Roger364/q-memory-manager.git`, et `git ls-remote origin HEAD` retourne `03bed3e` : **un push a eu lieu**, mais **6 commits** (`c4fc786` → `d08e412`, soit les étapes 2 à 6 et tout le lot 8) ne sont pas sur le distant. `PLAN.md:42` annonce « 12 dans `plan.rs`, 13 dans `rules.rs` » ; le comptage réel est l'inverse (13 / 12). Le nombre total de 43 et le volume de 7 875 lignes sont, eux, exacts.
+**Preuve.** `PLAN.md:49` et `PLAN.md:372` citaient un ancien remote erroné et « rien poussé ». Le remote réel est `https://github.com/Roger364/q-memory-manager.git`, et `git ls-remote origin HEAD` retourne `03bed3e` : **un push a eu lieu**, mais **6 commits** (`c4fc786` → `d08e412`, soit les étapes 2 à 6 et tout le lot 8) ne sont pas sur le distant. `PLAN.md:42` annonce « 12 dans `plan.rs`, 13 dans `rules.rs` » ; le comptage réel est l'inverse (13 / 12). Le nombre total de 43 et le volume de 7 875 lignes sont, eux, exacts.
 
 **Impact.** La section censée être la référence vérifiée contient trois affirmations fausses ; surtout, **le travail livré n'a pas de sauvegarde hors machine**.
 
@@ -151,3 +151,9 @@ Les vérifications rejouées portent sur la compilation, les tests unitaires, le
 | 7 | P3-2, P3-3 : CI, tests comportementaux, finitions | moyen | rendre la recette reproductible |
 
 **Conclusion.** Le projet mérite d'être conservé en l'état comme base de travail : je n'ai trouvé aucune régression fonctionnelle par rapport aux objectifs des étapes 0 à 6, et les affirmations du journal résistent à un rejeu indépendant. Les réserves portent sur des angles que le registre D1–D23 n'a pas examinés — l'autorité des chemins système, l'authentification du client local, la conservation des options d'exécution — et sur une dette de provenance transformée en invariant. Ce sont des corrections ciblées, pas une refonte ; le lot de clôture 8 peut rester fermé, un lot 9 de sécurité est en revanche justifié.
+
+---
+
+## 7. Post-scriptum de synchronisation (2026-11-14)
+
+Cette revue a été rédigée sur `d08e412`, puis commitée sous `ecccadc`. Au moment de la rédaction, `origin/main` était à `03bed3e` et le décalage était de six commits ; il est de sept après le commit de revue. Le seul remote configuré est `Roger364/q-memory-manager`. L'ancien nom de dépôt cité dans `PLAN.md` était une erreur documentaire : le dépôt correspondant répond `404`, et aucune trace de cette URL n'existe dans `.git/config` ni dans les références Git. Les fichiers de test non suivis signalés dans P3-1 étaient des artefacts temporaires d'un autre agent ; ils ont été supprimés et ne font pas partie du dépôt.
