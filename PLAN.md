@@ -31,19 +31,19 @@ Règles de tenue :
 
 ## 1. État vérifié du dépôt (point de référence)
 
-Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le 2026-11-14 après l'étape 5** ; le point de référence reste le commit `e5198a9`, postérieur aux étapes 0 et 1 (section 7.0). Les lignes ci-dessous décrivent l'arbre à cette révision.
+Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le 2026-11-14 après l'étape 6** ; le point de référence reste le commit `e5198a9`, postérieur aux étapes 0 et 1 (section 7.0). Les lignes ci-dessous décrivent l'arbre à cette révision.
 
 | Élément | Constat révisé (2026-11-13) |
 |---|---|
-| Volume | 7 695 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 675, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 626, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
+| Volume | 7 717 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 734, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 626, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
 | Base de règles | 601 règles : 261 services, 197 processus, 93 entrées de démarrage, 50 tâches. Le plan annonçait 602 ; l'audit de l'étape 4 a révélé le doublon `eventsystem` / `eventsysevent`, fusionné (7.6) |
-| Tests | 37 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs` ; `cargo test` code retour 0 sur les trente-sept, consigné au journal (7.7) |
+| Tests | 38 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 1 dans `win.rs` ; `cargo test` code retour 0 sur les trente-huit, consigné au journal (7.8) |
 | `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
 | `cargo clippy` | **code retour 0** : `cargo clippy --all-targets -- -D warnings`, consigné au journal (7.6) |
 | Build release | **code retour 0** : binaire produit, consigné au journal (7.6) |
 | Rapport présent | `ramscope/ramscope-data/rapports/ramscope-2026-11-13-19-14-44.json` porte `"demo": true` : ce sont des données simulées, pas une mesure de la machine |
-| `README.md` | réécrit à l'étape 0 ; `Host`, origine et jeton sont couverts par des tests nommés dans `server.rs`. La validation serveur et les garde-fous moteur sont décrits (deux verrous, étape 2) ; les gains typés (étape 3), le cadenas distinct du niveau et la provenance de famille (étape 4), puis l'interface de décision (étape 5) sont documentés |
-| `SAFETY.md` | créé à l'étape 0 ; complété par les limites des gains typés (étape 3), la séparation verrou/gravité et les limites de provenance des règles (étape 4), puis les garde-fous de sélection (étape 5) |
+| `README.md` | réécrit à l'étape 0 ; `Host`, origine et jeton sont couverts par des tests nommés dans `server.rs`. La validation serveur et les garde-fous moteur sont décrits (deux verrous, étape 2) ; les gains typés (étape 3), le cadenas distinct du niveau et la provenance de famille (étape 4), puis l'interface de décision (étape 5) et la recette réelle en lecture seule (étape 6) sont documentés |
+| `SAFETY.md` | créé à l'étape 0 ; complété par les limites des gains typés (étape 3), la séparation verrou/gravité et les limites de provenance des règles (étape 4), puis les garde-fous de sélection (étape 5) et la lecture des tâches sans administrateur (étape 6) |
 | Versionnage | avant le commit de baseline : un seul fichier suivi (`README.md`) ; remote configuré (`lupeka1/q-memory-manager`), rien poussé |
 | Compilation Windows | `cargo test` compile `win.rs` : la cible Windows est vérifiable ici. Seule l'application réelle des actions demande une VM ou un instantané |
 
@@ -91,8 +91,9 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | D16 | P2 | `report.rs` — ligne « rien à optimiser » | « Rien à optimiser sans risque » emploie une formulation que l'étape 5 bannit, hors du périmètre de son contrôle (limité à `src/web/`). À corriger à l'étape 3 avec le reste du rapport ; l'étape 5 n'en assurera que la garde de régression. La justification `rules.rs` « Désactivable sans risque » est conservée : elle qualifie un élément précis, pas une sélection de masse. Corrigé à l'étape 3 (7.5) : « Rien à optimiser : configuration déjà saine » |
 | D18 | P2 | `web/app.js` — fermeture du fond de modale | Un clic sur un bouton qui ouvre une modale après un appel réseau (export) peut être reçu par le masque apparu entre l'appui et le relâchement : la modale s'ouvre puis se referme aussitôt. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : fermeture seulement si l'appui a commencé sur le fond ; test `le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite` |
 | D19 | P2 | `web/style.css` — media query petit écran | À 390 px de large, `.hero` conservait une première colonne de 320 px et des cartes de 150 px : la grille dépassait la fenêtre et la deuxième carte était coupée. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : `.hero` sur une colonne, machine pleine largeur et chemins d'export coupés ; capture `ramscope-step5-mobile-fixed.png` |
+| D20 | P2 | `win.rs` — `collect_tasks` | En lecture seule, `C:\\Windows\\System32\\Tasks` est refusé par les ACL : l'interface affichait 0 tâche alors que Windows en expose 201. Observé à la recette de l'étape 6. Corrigé à l'étape 6 (7.8) : repli sur `schtasks /query /xml`, même analyse XML, test `decode_une_tache_xml` ; 201 tâches et 167 activées retrouvées, identiques à `Get-ScheduledTask` |
 
-D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7).
+D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8).
 
 ## 4. Étapes
 
@@ -281,6 +282,8 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 ---
 
 ### Étape 6 — Recette et documentation
+
+**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape.
 
 **Objectif.** Livrer avec des preuves, pas avec des promesses.
 
@@ -490,6 +493,30 @@ Limites : la restauration et l'export ont été exercés en mode démonstration 
 
 Captures : `ramscope-step5-final-2026-11-14.png` (bureau), `ramscope-step5-mobile-fixed.png` (390 px), `ramscope-step5-export-mobile.png` (export), `ramscope-step5-confirm.png` (lot réversible), `ramscope-step5-applied.png` (application 1/1), `ramscope-step5-kill.png` (`Kill` seul) et `ramscope-step5-restored.png` (restauration).
 
+### 7.8 Étape 6 — recette finale (2026-11-14)
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence |
+| `cargo test` | 0 | 38 tests, 38 réussis, dont `win::tests::decode_une_tache_xml` ajouté pour D20 |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9,55 s après arrêt des deux serveurs qui verrouillaient l'exécutable |
+| `node --check src/web/app.js` | 0 | syntaxe JavaScript valide |
+| `ramscope.exe --help` | 0 | options et limites d'élévation affichées |
+| Démo — `GET /` | 200 | binaire final rechargé sur `http://127.0.0.1:8876` ; plan de 35 éléments, sélection vide ; parcours détaillé en 7.7, interface inchangée depuis |
+| Réel — `--no-admin` sur `http://127.0.0.1:8877` | 200 | lecture seule, aucun UAC, aucune action appliquée |
+| Réel — mémoire totale | — | RamScope `34 281 054 208` octets = `TotalVisibleMemorySize` `33 477 592` Ko ; disponible `20 923 269 120` octets, même ordre que les `20 413 864` Ko de PowerShell pris à un autre instant (écart < 0,1 %) |
+| Réel — services | — | 289 dans RamScope, 289 via `Get-Service` |
+| Réel — tâches | — | après D20 : 201 dans RamScope, 201 via `Get-ScheduledTask` ; 167 activées des deux côtés ; zéro doublon de chemin |
+| Réel — démarrage | — | 7 entrées RamScope, 6 via `Win32_StartupCommand` : `IJNetworkScannerSelectorEX2`, absent de l'API, est lu dans le registre 32 bits ; RamScope est plus complet sur ce point |
+| Réel — processus | — | 238–239 selon l'instant, contre 237–238 via `Get-Process` ; écart dû au décalage des collectes |
+| Réel — durée de collecte | — | 844 ms avec le repli `schtasks` au dernier passage, 1 004 ms au premier, contre 237 ms avant ; le repli ajoute environ 0,6–0,8 s, consigné comme régression de performance acceptée pour la lecture seule |
+| Surface HTTP | 403 | `Host: attaquant.tld` sur `/` et `/api/snapshot` ; absence de jeton ; origine étrangère ; `POST /api/apply` en lecture seule |
+
+D20 a été trouvé par cette recette : sans administrateur, `C:\\Windows\\System32\\Tasks` est refusé par les ACL et RamScope affichait 0 tâche alors que Windows en expose 201. Le repli `schtasks /query /xml` analyse le même XML, conserve les chemins et les états, et retrouve exactement 201 tâches et 167 activées. Le test `decode_une_tache_xml` couvre le parseur ; le chemin administrateur (lecture directe des fichiers XML) n'a pas été comparé à `schtasks`. La note « tâche non lisible » n'est plus affichée quand le repli retrouve la liste : elle ne subsiste que si le repli échoue, pour ne pas alarmer sans raison.
+
+La collecte réelle n'a subi aucune action : seuls des `GET` et des `POST` refusés en lecture seule ont été exécutés. Le parcours de démonstration complet (charger, filtrer, sélectionner, confirmer, appliquer, restaurer, exporter) est celui de 7.7 ; l'interface n'a pas changé depuis, seul `win.rs` a été modifié. Les limites restantes sont consignées dans le README : pas d'application réelle, pas de comparaison du chemin administrateur des tâches, CSP non resserrée, pas de lecteur d'écran.
+
 ### Avancement
 
 | Étape | État | Défauts traités | Vérification consignée |
@@ -500,7 +527,7 @@ Captures : `ramscope-step5-final-2026-11-14.png` (bureau), `ramscope-step5-mobil
 | 3 — Vérité des chiffres | terminée (2026-11-13) | D3, D4, D5, D6, D15, D16 | voir 7.5 |
 | 4 — Règles et provenance | terminée avec écart 602→601 documenté (2026-11-13) | D7, D9, D10, D11, D17 | voir 7.6 |
 | 5 — Interface de décision | terminée (2026-11-14) | D8 (volet interface), D18, D19 | voir 7.7 |
-| 6 — Recette et documentation | à faire | — | — |
+| 6 — Recette et documentation | terminée (2026-11-14) | D20 | voir 7.8 |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.
 

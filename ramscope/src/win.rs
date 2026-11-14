@@ -935,6 +935,105 @@ fn trigger_label(n: &str) -> &'static str {
     }
 }
 
+fn task_from_xml(xml: &str, path: &str) -> Option<TaskItem> {
+    let doc = roxmltree::Document::parse(xml).ok()?;
+    let root = doc.root_element();
+    let child_text = |node: roxmltree::Node, name: &str| -> String {
+        node.children()
+            .find(|c| c.has_tag_name(name))
+            .and_then(|c| c.text())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let reg = root.children().find(|c| c.has_tag_name("RegistrationInfo"));
+    let (author, description) = match reg {
+        Some(r) => (child_text(r, "Author"), child_text(r, "Description")),
+        None => (String::new(), String::new()),
+    };
+    let enabled = root
+        .children()
+        .find(|c| c.has_tag_name("Settings"))
+        .and_then(|s| s.children().find(|c| c.has_tag_name("Enabled")))
+        .and_then(|c| c.text())
+        .map(|t| !t.trim().eq_ignore_ascii_case("false"))
+        .unwrap_or(true);
+    let mut triggers = Vec::new();
+    if let Some(t) = root.children().find(|c| c.has_tag_name("Triggers")) {
+        for c in t.children().filter(|c| c.is_element()) {
+            triggers.push(trigger_label(c.tag_name().name()).to_string());
+        }
+    }
+    let mut command = String::new();
+    if let Some(a) = root.children().find(|c| c.has_tag_name("Actions")) {
+        for exec in a.children().filter(|c| c.is_element()) {
+            let cmd = child_text(exec, "Command");
+            let args = child_text(exec, "Arguments");
+            let data = child_text(exec, "Data");
+            let full = [cmd, args, data]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !full.is_empty() {
+                if command.is_empty() {
+                    command = full;
+                } else {
+                    command.push_str(" ; ");
+                    command.push_str(&full);
+                }
+            }
+        }
+    }
+    let name = path.rsplit('\\').next().unwrap_or(path).to_string();
+    let advice = rules::task_advice(path, &command, enabled, &triggers);
+    Some(TaskItem {
+        path: path.to_string(),
+        name,
+        enabled,
+        triggers,
+        command,
+        author,
+        description,
+        advice,
+    })
+}
+
+/// Repli sans administrateur : `schtasks /query /xml` expose les tâches que
+/// l'annuaire `System32\\Tasks` refuse de lire, sous forme de XML encadrés par
+/// des commentaires `<!-- \\Chemin -->`. L'analyse reste indépendante de la langue.
+fn tasks_from_schtasks_xml() -> Vec<TaskItem> {
+    let output = match std::process::Command::new("schtasks.exe")
+        .args(["/query", "/xml"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut out = Vec::new();
+    for block in text.split("<!--").skip(1) {
+        let Some((comment, rest)) = block.split_once("-->") else {
+            continue;
+        };
+        let path = comment.trim();
+        if !path.starts_with('\\') {
+            continue;
+        }
+        let Some(start) = rest.find("<Task") else {
+            continue;
+        };
+        let Some(end) = rest.rfind("</Task>") else {
+            continue;
+        };
+        if let Some(item) = task_from_xml(&rest[start..end + 7], path) {
+            out.push(item);
+        }
+    }
+    out
+}
+
 fn collect_tasks(notes: &mut Vec<String>) -> Vec<TaskItem> {
     let base = tasks_dir();
     let mut files = Vec::new();
@@ -952,76 +1051,16 @@ fn collect_tasks(notes: &mut Vec<String>) -> Vec<TaskItem> {
                 continue;
             }
         };
-        let doc = match roxmltree::Document::parse(&xml) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-        let root = doc.root_element();
-        let child_text = |node: roxmltree::Node, name: &str| -> String {
-            node.children()
-                .find(|c| c.has_tag_name(name))
-                .and_then(|c| c.text())
-                .unwrap_or("")
-                .trim()
-                .to_string()
-        };
-        let reg = root.children().find(|c| c.has_tag_name("RegistrationInfo"));
-        let (author, description) = match reg {
-            Some(r) => (child_text(r, "Author"), child_text(r, "Description")),
-            None => (String::new(), String::new()),
-        };
-        let enabled = root
-            .children()
-            .find(|c| c.has_tag_name("Settings"))
-            .and_then(|s| s.children().find(|c| c.has_tag_name("Enabled")))
-            .and_then(|c| c.text())
-            .map(|t| !t.trim().eq_ignore_ascii_case("false"))
-            .unwrap_or(true);
-        let mut triggers = Vec::new();
-        if let Some(t) = root.children().find(|c| c.has_tag_name("Triggers")) {
-            for c in t.children().filter(|c| c.is_element()) {
-                triggers.push(trigger_label(c.tag_name().name()).to_string());
-            }
+        if let Some(item) = task_from_xml(&xml, &path) {
+            out.push(item);
         }
-        let mut command = String::new();
-        if let Some(a) = root.children().find(|c| c.has_tag_name("Actions")) {
-            for exec in a.children().filter(|c| c.is_element()) {
-                let cmd = child_text(exec, "Command");
-                let args = child_text(exec, "Arguments");
-                let data = child_text(exec, "Data");
-                let full = [cmd, args, data]
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if !full.is_empty() {
-                    if command.is_empty() {
-                        command = full;
-                    } else {
-                        command.push_str(" ; ");
-                        command.push_str(&full);
-                    }
-                }
-            }
-        }
-        let name = rel
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let advice = rules::task_advice(&path, &command, enabled, &triggers);
-        out.push(TaskItem {
-            path,
-            name,
-            enabled,
-            triggers,
-            command,
-            author,
-            description,
-            advice,
-        });
     }
-    if unreadable > 0 || denied > 0 {
+    let mut fallback_used = false;
+    if out.is_empty() {
+        out = tasks_from_schtasks_xml();
+        fallback_used = !out.is_empty();
+    }
+    if (unreadable > 0 || denied > 0) && !fallback_used {
         notes.push(format!(
             "{} tâche(s) planifiée(s) non lisibles sans droits administrateur : passe en mode admin pour la liste complète.",
             unreadable + denied
@@ -1672,4 +1711,26 @@ pub fn data_dir() -> PathBuf {
     let d = Path::new(&base).join("RamScope");
     let _ = std::fs::create_dir_all(d.join("rollbacks"));
     d
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_une_tache_xml() {
+        let xml = r#"<Task version="1.2">
+          <RegistrationInfo><Author>PC\Ro</Author><Description>test</Description></RegistrationInfo>
+          <Triggers><LogonTrigger/></Triggers>
+          <Settings><Enabled>false</Enabled></Settings>
+          <Actions><Exec><Command>cmd.exe</Command><Arguments>/c echo ok</Arguments></Exec></Actions>
+        </Task>"#;
+        let t = task_from_xml(xml, "\\Demo\\Tache").expect("XML valide");
+        assert_eq!(t.path, "\\Demo\\Tache");
+        assert_eq!(t.name, "Tache");
+        assert!(!t.enabled);
+        assert_eq!(t.triggers, vec!["À l'ouverture de session".to_string()]);
+        assert_eq!(t.command, "cmd.exe /c echo ok");
+        assert_eq!(t.author, "PC\\Ro");
+    }
 }
