@@ -8,6 +8,8 @@ La version 3 (2026-11-13, audit du code contre le registre) apporte cinq amendem
 
 La version 3.1 (2026-11-14, relecture de la v3 contre le code) corrige quatre points : (1) le plafond `min(somme des parts, RAM de l'hôte)` ne peut jamais mordre sur les parts réelles — toutes égales à `host_ram / shared` — et laisse intact le vrai vice : un hôte dont un service reste nécessaire ne libère rien ; la règle devient « tous les services de l'hôte dans le lot, sinon zéro » ; (2) la section 1 est remise à l'état d'après l'étape 1, sans mélange d'époques ; (3) `D16` est rattaché à l'étape 3, qui le corrige, l'étape 5 n'en assurant que la garde ; (4) `demo.rs` entre aux périmètres des étapes 2 et 3. Elle consigne aussi la vérification navigateur de l'étape 1 (7.2).
 
+La version 3.2 (2026-11-14, revue post-livraison) ne rouvre aucune étape fonctionnelle. Elle corrige un décompte de lignes périmé, consigne le point de contrôle `c4fc786` qui regroupe les étapes 2 à 5, enregistre trois dettes de durcissement (`D21`–`D23`) et ajoute un lot de clôture priorisé (section 8). Aucun code n'a été modifié par cette revue.
+
 ## 0. Comment lire et tenir ce plan
 
 Chaque étape suit le même gabarit, et aucun de ces cinq points ne peut être omis :
@@ -20,8 +22,8 @@ Chaque étape suit le même gabarit, et aucun de ces cinq points ne peut être o
 
 Règles de tenue :
 
-- Une étape = un commit. Le message cite les identifiants de défauts traités (`D1`, `D4`…).
-- Exception historique : les étapes 0 et 1 ont été livrées avant la mise sous versionnage et partagent le commit `e5198a9`, postérieur à leur exécution. La règle s'applique à partir de l'étape 2 ; ces deux étapes n'ont pas de test de réversion rejouable.
+- Une étape = un commit lorsque le découpage est possible. Le message cite les identifiants de défauts traités (`D1`, `D4`…).
+- Exception historique : les étapes 0 et 1 ont été livrées avant la mise sous versionnage et partagent le commit `e5198a9`, postérieur à leur exécution. Les étapes 2 à 5, développées avant leur premier commit, partagent le point de contrôle `c4fc786` ; ce regroupement est consigné ici et ne change pas la règle pour les étapes suivantes. Ces étapes n'ont pas de test de réversion rejouable séparément.
 - Un élément n'est marqué « terminé » que si le journal (section 7) contient le chemin de l'artefact et le code retour de la commande. « À consigner après exécution » n'est plus acceptable : soit la ligne existe avec son code retour, soit l'étape reste « à faire ».
 - Une étape qui échoue reste ouverte. On ne passe pas à la suivante en laissant un contrôle rouge derrière soi.
 - Les chiffres affichés restent annotés comme mesurés, estimés ou indisponibles. Une estimation n'est jamais présentée comme une mesure.
@@ -35,7 +37,7 @@ Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification 
 
 | Élément | Constat révisé (2026-11-13) |
 |---|---|
-| Volume | 7 717 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 734, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 626, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
+| Volume | 7 756 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 736, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 626, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
 | Base de règles | 601 règles : 261 services, 197 processus, 93 entrées de démarrage, 50 tâches. Le plan annonçait 602 ; l'audit de l'étape 4 a révélé le doublon `eventsystem` / `eventsysevent`, fusionné (7.6) |
 | Tests | 38 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 1 dans `win.rs` ; `cargo test` code retour 0 sur les trente-huit, consigné au journal (7.8) |
 | `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
@@ -92,8 +94,11 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | D18 | P2 | `web/app.js` — fermeture du fond de modale | Un clic sur un bouton qui ouvre une modale après un appel réseau (export) peut être reçu par le masque apparu entre l'appui et le relâchement : la modale s'ouvre puis se referme aussitôt. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : fermeture seulement si l'appui a commencé sur le fond ; test `le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite` |
 | D19 | P2 | `web/style.css` — media query petit écran | À 390 px de large, `.hero` conservait une première colonne de 320 px et des cartes de 150 px : la grille dépassait la fenêtre et la deuxième carte était coupée. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : `.hero` sur une colonne, machine pleine largeur et chemins d'export coupés ; capture `ramscope-step5-mobile-fixed.png` |
 | D20 | P2 | `win.rs` — `collect_tasks` | En lecture seule, `C:\\Windows\\System32\\Tasks` est refusé par les ACL : l'interface affichait 0 tâche alors que Windows en expose 201. Observé à la recette de l'étape 6. Corrigé à l'étape 6 (7.8) : repli sur `schtasks /query /xml`, même analyse XML, test `decode_une_tache_xml` ; 201 tâches et 167 activées retrouvées, identiques à `Get-ScheduledTask` |
+| D21 | P2 | `win.rs` — `tasks_from_schtasks_xml`, `run_schtasks` | L'outil est résolu par son nom (`Command::new("schtasks.exe")`). Sous Windows, un `schtasks.exe` placé dans le répertoire courant ou le `PATH` peut être exécuté à la place de l'outil système, y compris pendant une collecte en lecture seule. Découvert par la revue post-livraison. **Ouvert** : utiliser un chemin absolu `%SystemRoot%\\System32\\schtasks.exe`, et le même principe pour `explorer.exe` ; voir 8. |
+| D22 | P2 | `win.rs` — `collect_tasks` | Le repli `schtasks` n'est déclenché que si `out.is_empty()`. Si un seul fichier XML reste lisible et que les autres sont refusés, la liste est silencieusement partielle. Découvert par la revue post-livraison. **Ouvert** : déclencher le repli dès qu'une lecture est refusée, fusionner par chemin et dédupliquer ; test de fixture ; voir 8. |
+| D23 | P2 | `web/app.js`, `web/index.html`, `server.rs` — CSP | La CSP conserve `'unsafe-inline'` pour les styles et un gestionnaire inline (`elevate()`). L'étape 1 annonçait un resserrage à l'étape 5, qui n'a pas été fait. Découvert par la revue post-livraison. **Ouvert** : supprimer le gestionnaire inline restant, passer `script-src` à `'self'`, puis vérifier l'interface en démonstration ; voir 8. |
 
-D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8).
+D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8). D21 à D23 sont ouverts et inscrits au lot de clôture (section 8).
 
 ## 4. Étapes
 
@@ -283,7 +288,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 ### Étape 6 — Recette et documentation
 
-**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape.
+**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape. La revue post-livraison a ouvert D21–D23, qui ne bloquent pas la démonstration mais appartiennent au lot de clôture (section 8).
 
 **Objectif.** Livrer avec des preuves, pas avec des promesses.
 
@@ -332,6 +337,8 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 **Surface HTTP.** `Host` inconnu, origine trompeuse par suffixe, absence de jeton, jeton invalide, corps trop volumineux, plus de 400 actions, méthode non autorisée.
 
+**Tâches et outils externes.** ACL complète, ACL partielle, `schtasks` absent ou en échec, doublons de chemins, résolution absolue de `schtasks.exe` et `explorer.exe`. La fixture doit couvrir le wrapper, pas seulement le parseur XML.
+
 **Règles.** Unicité, casse, mode de correspondance, absence de source, faux positif `php` déclenchant `hp`.
 
 ## 6. Risques et parades
@@ -341,6 +348,9 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 | Casser un service utile en le passant en manuel | Verrou côté serveur, justification par règle, restauration testée, mode démo pour répéter |
 | Faux positif d'une règle de correspondance | Correspondance exacte ou par nom d'exécutable, test dédié par famille de faux positifs connus |
 | Exposition locale résiduelle malgré le durcissement | Validation `Host` + jeton sur toutes les routes API + CSP ; test d'intégration rejoué à chaque étape |
+| Exécution d'un outil système détourné (`schtasks.exe`, `explorer.exe`) | Résolution par chemin absolu `%SystemRoot%\System32\...`, jamais par nom nu ; D21, lot 8.1 |
+| Liste de tâches incomplète sur ACL partielles | Repli dès qu'une lecture est refusée, fusion par chemin et déduplication ; D22, lot 8.2 |
+| Contournement de la CSP par un gestionnaire inline | Suppression de `onclick="elevate()"` et passage de `script-src` à `'self'` ; D23, lot 8.4 |
 | Rollback incomplet après application partielle | Le point ne contient que les actions réussies ; l'interface affiche les échecs et n'annonce pas une restauration totale |
 | Régression de performance de la collecte | Mesure de `duration_ms` avant/après chaque étape touchant `win.rs`, consignée dans le journal |
 | Plan qui redevient une liste d'intentions | Gabarit obligatoire, test de réversion par changement, journal avec codes retour réels |
@@ -465,6 +475,8 @@ Le mode des tâches est un suffixe exact à frontière de composant (ou un nom d
 
 ### 7.7 Étape 5 — contrôles exécutés (2026-11-14)
 
+Commit : `c4fc786` (point de contrôle des étapes 2 à 5).
+
 | Commande / contrôle | Code retour | Observation |
 |---|---|---|
 | `cargo fmt --check` | 0 | aucune différence après reformatage du test ajouté |
@@ -495,6 +507,8 @@ Captures : `ramscope-step5-final-2026-11-14.png` (bureau), `ramscope-step5-mobil
 
 ### 7.8 Étape 6 — recette finale (2026-11-14)
 
+Commit : `6dfbaa2`.
+
 | Commande / contrôle | Code retour | Observation |
 |---|---|---|
 | `cargo fmt --check` | 0 | aucune différence |
@@ -517,6 +531,21 @@ D20 a été trouvé par cette recette : sans administrateur, `C:\\Windows\\Syste
 
 La collecte réelle n'a subi aucune action : seuls des `GET` et des `POST` refusés en lecture seule ont été exécutés. Le parcours de démonstration complet (charger, filtrer, sélectionner, confirmer, appliquer, restaurer, exporter) est celui de 7.7 ; l'interface n'a pas changé depuis, seul `win.rs` a été modifié. Les limites restantes sont consignées dans le README : pas d'application réelle, pas de comparaison du chemin administrateur des tâches, CSP non resserrée, pas de lecteur d'écran.
 
+### 7.9 Revue post-livraison (2026-11-14)
+
+| Constat | Preuve | Décision |
+|---|---|---|
+| Décompte de la section 1 périmé | le plan annonçait 7 717 lignes et `win.rs` 1 734 ; `wc -l` donne 7 756 et 1 736 | corrigé dans la section 1 ; les chiffres restent datés |
+| Outils externes résolus par leur nom | `Command::new("schtasks.exe")` dans deux fonctions, `explorer.exe` dans `/api/open-dir` | D21, lot 8.1 |
+| Repli déclenché seulement sur liste vide | `if out.is_empty()` dans `collect_tasks` | D22, lot 8.2 |
+| Test D20 limité au parseur | `decode_une_tache_xml` ne teste ni le wrapper ni le déclenchement | lot 8.3 |
+| Budget de collecte non défini | 844–1 004 ms en lecture seule contre 237 ms avant | budget ≤ 1,5 s, lot 8.3 |
+| CSP encore ouverte | `'unsafe-inline'` et `onclick="elevate()"` | D23, lot 8.4 |
+| Preuves non versionnées | 7 captures, 1,3 Mo, non suivies | lot 8.5 |
+| Règle « une étape = un commit » contredite par le point de contrôle | `c4fc786` regroupe les étapes 2 à 5 | exception consignée dans la section 0 |
+
+Verdict : le socle fonctionnel reste livré, mais aucune nouvelle étape fonctionnelle n'est justifiée. Le lot 8 est un lot de clôture de 1,5 à 2 jours ; 8.1 et 8.2 passent avant toute distribution. Aucun code n'a été modifié pendant cette revue ; D21–D23 restent ouverts.
+
 ### Avancement
 
 | Étape | État | Défauts traités | Vérification consignée |
@@ -528,10 +557,49 @@ La collecte réelle n'a subi aucune action : seuls des `GET` et des `POST` refus
 | 4 — Règles et provenance | terminée avec écart 602→601 documenté (2026-11-13) | D7, D9, D10, D11, D17 | voir 7.6 |
 | 5 — Interface de décision | terminée (2026-11-14) | D8 (volet interface), D18, D19 | voir 7.7 |
 | 6 — Recette et documentation | terminée (2026-11-14) | D20 | voir 7.8 |
+| Lot de clôture — durcissement | à faire | D21, D22, D23 | voir 8 |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.
 
-## 8. Hors périmètre
+## 8. Après livraison — lot de clôture
+
+Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. L'ordre 8.1 → 8.2 → 8.3 est obligatoire avant une distribution ; 8.4 peut suivre ; 8.5 clôt le dossier.
+
+### 8.1 Chemins absolus des outils externes (D21) — P2, 0,25 jour
+
+**Changement.** Résoudre `schtasks.exe` via `%SystemRoot%\System32\schtasks.exe` dans `tasks_from_schtasks_xml` et `run_schtasks`; appliquer le même principe à `explorer.exe` dans `/api/open-dir`. Un helper unique rend le chemin testable.
+
+**Critère de sortie.** `grep -rn 'Command::new("schtasks.exe")\|Command::new("explorer.exe")' ramscope/src/` → aucun résultat ; test nommé du helper ; snapshot réel toujours à 201 tâches et 167 activées.
+
+**Test de réversion.** Le test du helper échoue si le nom nu revient ; le snapshot échoue si le chemin absolu ne trouve plus `schtasks`.
+
+### 8.2 Repli sur ACL partielles et déduplication (D22) — P2, 0,5 jour
+
+**Changement.** Déclencher le repli dès que `denied > 0` ou `unreadable > 0`, pas seulement quand `out.is_empty()`. Fusionner les résultats directs et `schtasks` par chemin ; un chemin ne doit apparaître qu'une fois. En cas d'échec du repli, conserver une note explicite au lieu d'une liste vide silencieuse.
+
+**Critère de sortie.** Test nommé avec une fixture représentant un fichier lisible et des fichiers refusés : la liste fusionnée est complète, sans doublon. Test d'intégration réel : 201 tâches, 167 activées, zéro doublon.
+
+**Test de réversion.** La fixture échoue si le repli ne se déclenche que sur une liste vide, ou si la fusion réintroduit un doublon.
+
+### 8.3 Test du wrapper et budget de collecte (D22) — P2, 0,25 jour
+
+**Changement.** Extraire la transformation « sortie `schtasks` → tâches » dans une fonction testable, puis la couvrir avec une fixture de deux tâches, dont une désactivée. Mesurer la collecte réelle : budget accepté **≤ 1,5 s** en lecture seule ; au-delà, mettre en cache la liste des tâches pour 60 s ou documenter le dépassement.
+
+**Critère de sortie.** Test nommé du wrapper ; `meta.duration_ms` consigné sur trois collectes réelles ; aucun dépassement silencieux du budget.
+
+### 8.4 Resserrer la CSP (D23) — P2, 0,5 jour
+
+**Changement.** Supprimer le gestionnaire inline `onclick="elevate()"` et les styles inline restants, brancher l'action par un écouteur ajouté dans `app.js`, puis passer `script-src` à `'self'` sans `'unsafe-inline'`. Conserver `style-src` uniquement si un style inline légitime subsiste, et le justifier.
+
+**Critère de sortie.** `grep -n 'onclick=\|style=' src/web/index.html src/web/app.js` → aucun résultat non justifié ; en-tête CSP servi sans `'unsafe-inline'` pour les scripts ; chargement Chromium sans erreur console ; parcours démo charger → sélectionner → confirmer → annuler encore fonctionnel.
+
+### 8.5 Preuves et versionnage — P3, 0,1 jour
+
+**Changement.** Soit versionner les captures sous `docs/evidence/`, soit retirer leur référence du journal et les déclarer locales. Vérifier que 7.7 et 7.8 citent bien `c4fc786` et `6dfbaa2` (fait), puis que le prochain lot respecte « un commit par étape ».
+
+**Critère de sortie.** `git status --short` ne montre que des fichiers explicitement ignorés ou versionnés ; le journal cite le hash du commit de chaque étape.
+
+## 9. Hors périmètre
 
 - Nettoyeur automatique, planification, exécution sans confirmation.
 - Base de règles communautaire ou téléchargée.
@@ -539,7 +607,7 @@ Une ligne « à faire » ne devient « terminée » qu'avec la commande, son cod
 - Télémétrie, envoi de rapport à un serveur distant.
 - Signature de code et distribution (sujet séparé, après stabilisation).
 
-## 9. Annexe — commandes de vérification
+## 10. Annexe — commandes de vérification
 
 Depuis `ramscope/`, sous Windows :
 
