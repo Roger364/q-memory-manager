@@ -1,0 +1,16 @@
+version: 2
+
+updates:
+  # Le manifeste Cargo est dans le sous-dossier ramscope/.
+  - package-ecosystem: "cargo"
+    directory: "/ramscope"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Les workflows utilisent des actions versionnées dans .github/workflows/.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
