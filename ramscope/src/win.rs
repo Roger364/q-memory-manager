@@ -895,9 +895,17 @@ fn parse_startup_id(id: &str) -> Option<(HKEY, String, String)> {
 // Tâches planifiées (lecture directe des XML, indépendante de la langue)
 // ---------------------------------------------------------------------------
 
+/// Chemin absolu d'un outil système. Ne jamais laisser Windows résoudre
+/// `schtasks.exe` ou `explorer.exe` depuis le répertoire courant ou le PATH.
+pub(crate) fn system32_path(name: &str) -> PathBuf {
+    let root = std::env::var("SystemRoot")
+        .or_else(|_| std::env::var("windir"))
+        .unwrap_or_else(|_| "C:\\Windows".into());
+    Path::new(&root).join("System32").join(name)
+}
+
 fn tasks_dir() -> PathBuf {
-    let windir = std::env::var("windir").unwrap_or_else(|_| "C:\\Windows".into());
-    Path::new(&windir).join("System32\\Tasks")
+    system32_path("Tasks")
 }
 
 fn walk_tasks(dir: &Path, base: &Path, out: &mut Vec<PathBuf>, denied: &mut u32) {
@@ -1004,7 +1012,7 @@ fn task_from_xml(xml: &str, path: &str) -> Option<TaskItem> {
 /// l'annuaire `System32\\Tasks` refuse de lire, sous forme de XML encadrés par
 /// des commentaires `<!-- \\Chemin -->`. L'analyse reste indépendante de la langue.
 fn tasks_from_schtasks_xml() -> Vec<TaskItem> {
-    let output = match std::process::Command::new("schtasks.exe")
+    let output = match std::process::Command::new(system32_path("schtasks.exe"))
         .args(["/query", "/xml"])
         .output()
     {
@@ -1034,6 +1042,25 @@ fn tasks_from_schtasks_xml() -> Vec<TaskItem> {
     out
 }
 
+fn task_key(path: &str) -> String {
+    path.trim().replace('/', "\\").to_lowercase()
+}
+
+fn needs_task_fallback(out_len: usize, unreadable: u32, denied: u32) -> bool {
+    out_len == 0 || unreadable > 0 || denied > 0
+}
+
+fn merge_tasks(primary: Vec<TaskItem>, fallback: Vec<TaskItem>) -> Vec<TaskItem> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(primary.len() + fallback.len());
+    for task in primary.into_iter().chain(fallback) {
+        if seen.insert(task_key(&task.path)) {
+            out.push(task);
+        }
+    }
+    out
+}
+
 fn collect_tasks(notes: &mut Vec<String>) -> Vec<TaskItem> {
     let base = tasks_dir();
     let mut files = Vec::new();
@@ -1056,9 +1083,12 @@ fn collect_tasks(notes: &mut Vec<String>) -> Vec<TaskItem> {
         }
     }
     let mut fallback_used = false;
-    if out.is_empty() {
-        out = tasks_from_schtasks_xml();
-        fallback_used = !out.is_empty();
+    if needs_task_fallback(out.len(), unreadable, denied) {
+        let fallback = tasks_from_schtasks_xml();
+        fallback_used = !fallback.is_empty();
+        if fallback_used {
+            out = merge_tasks(out, fallback);
+        }
     }
     if (unreadable > 0 || denied > 0) && !fallback_used {
         notes.push(format!(
@@ -1505,7 +1535,7 @@ fn current_service_start(name: &str) -> Option<StartType> {
 
 fn run_schtasks(path: &str, enable: bool) -> Result<(), String> {
     let flag = if enable { "/enable" } else { "/disable" };
-    let out = std::process::Command::new("schtasks.exe")
+    let out = std::process::Command::new(system32_path("schtasks.exe"))
         .args(["/change", "/tn", path, flag])
         .output()
         .map_err(|e| format!("schtasks introuvable : {e}"))?;
@@ -1732,5 +1762,40 @@ mod tests {
         assert_eq!(t.triggers, vec!["À l'ouverture de session".to_string()]);
         assert_eq!(t.command, "cmd.exe /c echo ok");
         assert_eq!(t.author, "PC\\Ro");
+    }
+
+    fn tache_test(path: &str) -> TaskItem {
+        let xml = r#"<Task version="1.2">
+          <Settings><Enabled>true</Enabled></Settings>
+          <Actions><Exec><Command>cmd.exe</Command></Exec></Actions>
+        </Task>"#;
+        task_from_xml(xml, path).expect("XML valide")
+    }
+
+    #[test]
+    fn chemins_des_outils_systeme_sont_absolus() {
+        let path = system32_path("schtasks.exe");
+        assert!(path.is_absolute());
+        assert!(path
+            .to_string_lossy()
+            .to_lowercase()
+            .ends_with("system32\\schtasks.exe"));
+    }
+
+    #[test]
+    fn le_repli_couvre_une_acl_partielle() {
+        assert!(needs_task_fallback(0, 0, 0));
+        assert!(!needs_task_fallback(1, 0, 0));
+        assert!(needs_task_fallback(1, 1, 0));
+        assert!(needs_task_fallback(1, 0, 1));
+    }
+
+    #[test]
+    fn fusionne_les_taches_par_chemin_sans_doublon() {
+        let direct = vec![tache_test("\\A"), tache_test("\\B")];
+        let fallback = vec![tache_test("\\b"), tache_test("\\C")];
+        let merged = merge_tasks(direct, fallback);
+        let paths: Vec<&str> = merged.iter().map(|t| t.path.as_str()).collect();
+        assert_eq!(paths, vec!["\\A", "\\B", "\\C"]);
     }
 }

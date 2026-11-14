@@ -61,7 +61,7 @@ L'interface ne présélectionne aucune action risquée : la sélection de masse 
 - L'élévation UAC est demandée au lancement, sauf avec `--demo` ou `--no-admin`.
 - L'interface écoute uniquement sur la boucle locale ; toute autre adresse passée à `--host` est refusée au démarrage.
 - L'en-tête `Host` est validé contre les adresses de la session, l'origine est comparée exactement, et toute route `/api/` exige le jeton. Le jeton reste présent dans la page, mais seulement pour un `Host` autorisé.
-- En lecture seule, les tâches planifiées sont lues via `schtasks /query /xml` quand `System32\Tasks` est inaccessible : cela n'élève pas les droits et n'exécute aucune tâche. Le 2026-11-14, les 201 tâches et 167 tâches activées retrouvées correspondaient à `Get-ScheduledTask`.
+- En lecture seule, les tâches planifiées sont lues via `schtasks /query /xml` quand `System32\Tasks` est inaccessible : cela n'élève pas les droits et n'exécute aucune tâche. Le repli appelle l'outil système par chemin absolu et fusionne les lectures partielles par chemin, sans doublon. Le 2026-11-14, les 201 tâches et 167 tâches activées retrouvées correspondaient à `Get-ScheduledTask`.
 - Fermez l'application quand vous ne l'utilisez pas : une page ouverte dans le même navigateur reste sans effet, mais la surface n'existe que pendant l'exécution.
 
 ## Avant une première utilisation réelle

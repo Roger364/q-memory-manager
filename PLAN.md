@@ -33,13 +33,13 @@ Règles de tenue :
 
 ## 1. État vérifié du dépôt (point de référence)
 
-Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le 2026-11-14 après l'étape 6** ; le point de référence reste le commit `e5198a9`, postérieur aux étapes 0 et 1 (section 7.0). Les lignes ci-dessous décrivent l'arbre à cette révision.
+Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le 2026-11-14 après le lot 8.1/8.2** ; le point de référence reste le commit `e5198a9`, postérieur aux étapes 0 et 1 (section 7.0). Les lignes ci-dessous décrivent l'arbre à cette révision.
 
-| Élément | Constat révisé (2026-11-13) |
+| Élément | Constat révisé (2026-11-14) |
 |---|---|
-| Volume | 7 756 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 736, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 626, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
+| Volume | 7 823 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 801, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 628, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
 | Base de règles | 601 règles : 261 services, 197 processus, 93 entrées de démarrage, 50 tâches. Le plan annonçait 602 ; l'audit de l'étape 4 a révélé le doublon `eventsystem` / `eventsysevent`, fusionné (7.6) |
-| Tests | 38 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 1 dans `win.rs` ; `cargo test` code retour 0 sur les trente-huit, consigné au journal (7.8) |
+| Tests | 41 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs`, 4 dans `win.rs` ; `cargo test` code retour 0 sur les quarante et une, consigné au journal (7.10) |
 | `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
 | `cargo clippy` | **code retour 0** : `cargo clippy --all-targets -- -D warnings`, consigné au journal (7.6) |
 | Build release | **code retour 0** : binaire produit, consigné au journal (7.6) |
@@ -94,11 +94,11 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | D18 | P2 | `web/app.js` — fermeture du fond de modale | Un clic sur un bouton qui ouvre une modale après un appel réseau (export) peut être reçu par le masque apparu entre l'appui et le relâchement : la modale s'ouvre puis se referme aussitôt. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : fermeture seulement si l'appui a commencé sur le fond ; test `le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite` |
 | D19 | P2 | `web/style.css` — media query petit écran | À 390 px de large, `.hero` conservait une première colonne de 320 px et des cartes de 150 px : la grille dépassait la fenêtre et la deuxième carte était coupée. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : `.hero` sur une colonne, machine pleine largeur et chemins d'export coupés ; capture `ramscope-step5-mobile-fixed.png` |
 | D20 | P2 | `win.rs` — `collect_tasks` | En lecture seule, `C:\\Windows\\System32\\Tasks` est refusé par les ACL : l'interface affichait 0 tâche alors que Windows en expose 201. Observé à la recette de l'étape 6. Corrigé à l'étape 6 (7.8) : repli sur `schtasks /query /xml`, même analyse XML, test `decode_une_tache_xml` ; 201 tâches et 167 activées retrouvées, identiques à `Get-ScheduledTask` |
-| D21 | P2 | `win.rs` — `tasks_from_schtasks_xml`, `run_schtasks` | L'outil est résolu par son nom (`Command::new("schtasks.exe")`). Sous Windows, un `schtasks.exe` placé dans le répertoire courant ou le `PATH` peut être exécuté à la place de l'outil système, y compris pendant une collecte en lecture seule. Découvert par la revue post-livraison. **Ouvert** : utiliser un chemin absolu `%SystemRoot%\\System32\\schtasks.exe`, et le même principe pour `explorer.exe` ; voir 8. |
-| D22 | P2 | `win.rs` — `collect_tasks` | Le repli `schtasks` n'est déclenché que si `out.is_empty()`. Si un seul fichier XML reste lisible et que les autres sont refusés, la liste est silencieusement partielle. Découvert par la revue post-livraison. **Ouvert** : déclencher le repli dès qu'une lecture est refusée, fusionner par chemin et dédupliquer ; test de fixture ; voir 8. |
+| D21 | P2 | `win.rs` — `tasks_from_schtasks_xml`, `run_schtasks` | L'outil est résolu par son nom (`Command::new("schtasks.exe")`). Sous Windows, un `schtasks.exe` placé dans le répertoire courant ou le `PATH` peut être exécuté à la place de l'outil système, y compris pendant une collecte en lecture seule. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.1) : chemin absolu via `system32_path`, test `chemins_des_outils_systeme_sont_absolus`. |
+| D22 | P2 | `win.rs` — `collect_tasks` | Le repli `schtasks` n'est déclenché que si `out.is_empty()`. Si un seul fichier XML reste lisible et que les autres sont refusés, la liste est silencieusement partielle. Découvert par la revue post-livraison. **Corrigé le 2026-11-14** (8.2) : repli dès qu'une lecture est refusée, fusion par chemin, déduplication ; tests `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon`. |
 | D23 | P2 | `web/app.js`, `web/index.html`, `server.rs` — CSP | La CSP conserve `'unsafe-inline'` pour les styles et un gestionnaire inline (`elevate()`). L'étape 1 annonçait un resserrage à l'étape 5, qui n'a pas été fait. Découvert par la revue post-livraison. **Ouvert** : supprimer le gestionnaire inline restant, passer `script-src` à `'self'`, puis vérifier l'interface en démonstration ; voir 8. |
 
-D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8). D21 à D23 sont ouverts et inscrits au lot de clôture (section 8).
+D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7). D20 est corrigé par l'étape 6 (7.8). D21 et D22 sont corrigés par le lot 8 (7.10). D23 reste ouvert et inscrit au lot de clôture (section 8).
 
 ## 4. Étapes
 
@@ -288,7 +288,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 ### Étape 6 — Recette et documentation
 
-**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape. La revue post-livraison a ouvert D21–D23, qui ne bloquent pas la démonstration mais appartiennent au lot de clôture (section 8).
+**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.8. La recette réelle a révélé D20 (tâches illisibles sans administrateur), corrigé dans la même étape. La revue post-livraison a ouvert D21–D23 ; D21 et D22 sont corrigés par le lot 8.1/8.2 (7.10), D23 reste ouvert (section 8).
 
 **Objectif.** Livrer avec des preuves, pas avec des promesses.
 
@@ -533,6 +533,7 @@ La collecte réelle n'a subi aucune action : seuls des `GET` et des `POST` refus
 
 ### 7.9 Revue post-livraison (2026-11-14)
 
+
 | Constat | Preuve | Décision |
 |---|---|---|
 | Décompte de la section 1 périmé | le plan annonçait 7 717 lignes et `win.rs` 1 734 ; `wc -l` donne 7 756 et 1 736 | corrigé dans la section 1 ; les chiffres restent datés |
@@ -546,6 +547,20 @@ La collecte réelle n'a subi aucune action : seuls des `GET` et des `POST` refus
 
 Verdict : le socle fonctionnel reste livré, mais aucune nouvelle étape fonctionnelle n'est justifiée. Le lot 8 est un lot de clôture de 1,5 à 2 jours ; 8.1 et 8.2 passent avant toute distribution. Aucun code n'a été modifié pendant cette revue ; D21–D23 restent ouverts.
 
+### 7.10 Lot 8.1 et 8.2 — contrôles exécutés (2026-11-14)
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence après formatage des fichiers touchés |
+| `cargo test` | 0 | 41 tests, 41 réussis ; trois tests ajoutés dans `win.rs` |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9,67 s après arrêt de la démonstration qui verrouillait `target/release/ramscope.exe` |
+| `grep -rn 'Command::new("schtasks.exe")\|Command::new("explorer.exe")' src/` | 1 | aucun résultat : les outils passent par `system32_path` |
+| Réel — `--no-admin` après correction | 200 | `demo=false`, `admin=false`, 201 tâches, 167 activées, zéro doublon de chemin ; collecte 806 ms ; seule note : mode lecture seule |
+| Réel — `GET /` | 200 | page servie avec jeton de session ; `GET /api/health` confirme `demo=false`, `admin=false` |
+
+Les tests ajoutés sont `chemins_des_outils_systeme_sont_absolus`, `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon`. Le test de fusion utilise deux tâches directes et deux tâches de repli, dont un doublon de casse : la tâche directe est conservée et le chemin n'apparaît qu'une fois. Le cas ACL partielle est testé au niveau de la décision de repli et de la fusion, pas en injectant une ACL Windows réelle. Aucune action réelle n'a été appliquée ; le serveur réel a été arrêté après la mesure, puis la démonstration a été relancée sur `http://127.0.0.1:8876`.
+
 ### Avancement
 
 | Étape | État | Défauts traités | Vérification consignée |
@@ -557,15 +572,15 @@ Verdict : le socle fonctionnel reste livré, mais aucune nouvelle étape fonctio
 | 4 — Règles et provenance | terminée avec écart 602→601 documenté (2026-11-13) | D7, D9, D10, D11, D17 | voir 7.6 |
 | 5 — Interface de décision | terminée (2026-11-14) | D8 (volet interface), D18, D19 | voir 7.7 |
 | 6 — Recette et documentation | terminée (2026-11-14) | D20 | voir 7.8 |
-| Lot de clôture — durcissement | à faire | D21, D22, D23 | voir 8 |
+| Lot de clôture — durcissement | partiel : 8.1 et 8.2 terminés (2026-11-14), 8.3 à 8.5 à faire | D21, D22 | voir 7.10 et 8 |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.
 
 ## 8. Après livraison — lot de clôture
 
-Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. L'ordre 8.1 → 8.2 → 8.3 est obligatoire avant une distribution ; 8.4 peut suivre ; 8.5 clôt le dossier.
+Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune étape : il traite les dettes de durcissement et de preuve. **8.1 et 8.2 sont terminés le 2026-11-14** (contrôles en 7.10) ; 8.3 reste obligatoire avant une distribution ; 8.4 peut suivre ; 8.5 clôt le dossier.
 
-### 8.1 Chemins absolus des outils externes (D21) — P2, 0,25 jour
+### 8.1 Chemins absolus des outils externes (D21) — P2, 0,25 jour — terminé
 
 **Changement.** Résoudre `schtasks.exe` via `%SystemRoot%\System32\schtasks.exe` dans `tasks_from_schtasks_xml` et `run_schtasks`; appliquer le même principe à `explorer.exe` dans `/api/open-dir`. Un helper unique rend le chemin testable.
 
@@ -573,7 +588,9 @@ Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune éta
 
 **Test de réversion.** Le test du helper échoue si le nom nu revient ; le snapshot échoue si le chemin absolu ne trouve plus `schtasks`.
 
-### 8.2 Repli sur ACL partielles et déduplication (D22) — P2, 0,5 jour
+**État (2026-11-14).** Terminé : `system32_path` est utilisé pour `Tasks`, `schtasks.exe` et `explorer.exe` ; test `chemins_des_outils_systeme_sont_absolus` ; `grep` sans résultat ; snapshot réel à 201 tâches et 167 activées. Voir 7.10.
+
+### 8.2 Repli sur ACL partielles et déduplication (D22) — P2, 0,5 jour — terminé
 
 **Changement.** Déclencher le repli dès que `denied > 0` ou `unreadable > 0`, pas seulement quand `out.is_empty()`. Fusionner les résultats directs et `schtasks` par chemin ; un chemin ne doit apparaître qu'une fois. En cas d'échec du repli, conserver une note explicite au lieu d'une liste vide silencieuse.
 
@@ -581,9 +598,11 @@ Le socle fonctionnel des étapes 0 à 6 est livré. Ce lot ne rouvre aucune éta
 
 **Test de réversion.** La fixture échoue si le repli ne se déclenche que sur une liste vide, ou si la fusion réintroduit un doublon.
 
+**État (2026-11-14).** Terminé : `needs_task_fallback` couvre la liste vide et les lectures refusées ; `merge_tasks` fusionne par chemin insensible à la casse et déduplique ; tests `le_repli_couvre_une_acl_partielle` et `fusionne_les_taches_par_chemin_sans_doublon` ; snapshot réel sans doublon. Voir 7.10.
+
 ### 8.3 Test du wrapper et budget de collecte (D22) — P2, 0,25 jour
 
-**Changement.** Extraire la transformation « sortie `schtasks` → tâches » dans une fonction testable, puis la couvrir avec une fixture de deux tâches, dont une désactivée. Mesurer la collecte réelle : budget accepté **≤ 1,5 s** en lecture seule ; au-delà, mettre en cache la liste des tâches pour 60 s ou documenter le dépassement.
+**Changement.** Extraire la transformation « sortie `schtasks` → tâches » dans une fonction testable, puis la couvrir avec une fixture de deux tâches, dont une désactivée. Mesurer la collecte réelle : budget accepté **≤ 1,5 s** en lecture seule ; au-delà, mettre en cache la liste des tâches pour 60 s ou documenter le dépassement. La mesure de 7.10 (806 ms) est dans le budget, mais le wrapper lui-même n'est pas encore couvert.
 
 **Critère de sortie.** Test nommé du wrapper ; `meta.duration_ms` consigné sur trois collectes réelles ; aucun dépassement silencieux du budget.
 

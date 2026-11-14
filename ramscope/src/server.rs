@@ -374,7 +374,9 @@ fn handle(app: &App, mut req: Request) {
             let dir = util::data_dir();
             #[cfg(windows)]
             {
-                let _ = std::process::Command::new("explorer.exe").arg(&dir).spawn();
+                let _ = std::process::Command::new(crate::win::system32_path("explorer.exe"))
+                    .arg(&dir)
+                    .spawn();
             }
             json(
                 req,
