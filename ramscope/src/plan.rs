@@ -7,7 +7,7 @@
 //! Contrainte : aucun appel système, aucune dépendance à la couche FFI
 //! Windows ni au module `win`. Le module doit compiler sur toutes les cibles.
 
-use crate::model::Action;
+use crate::model::{Action, Gain, GainScope};
 use crate::rules;
 
 // ---------------------------------------------------------------------------
@@ -37,27 +37,81 @@ impl Verdict {
     }
 }
 
+/// Nombre maximal d'actions acceptées dans un seul lot.
+pub const MAX_ACTIONS: usize = 400;
+
 /// Valide une liste d'actions dans l'ordre, sans toucher au système.
 ///
 /// `self_pid` est le PID de RamScope : le programme ne peut pas se terminer
 /// lui-même. Les garde-fous de `win.rs` restent en place en second verrou.
 pub fn validate(actions: &[Action], self_pid: u32) -> Vec<Verdict> {
-    actions.iter().map(|a| validate_one(a, self_pid)).collect()
+    if actions.len() > MAX_ACTIONS {
+        return actions
+            .iter()
+            .map(|_| Verdict::refuse("Lot trop volumineux : 400 actions maximum."))
+            .collect();
+    }
+    actions
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            if actions[..i].iter().any(|autre| autre == a) {
+                Verdict::refuse("Action présente plusieurs fois dans le lot.")
+            } else {
+                validate_one(a, self_pid)
+            }
+        })
+        .collect()
 }
 
 fn validate_one(action: &Action, self_pid: u32) -> Verdict {
     match action {
-        Action::Service { name, .. } if rules::is_protected_service(name) => {
-            Verdict::refuse("Service vital : RamScope refuse de le modifier.")
+        Action::Service { name, start, from } => {
+            if rules::is_protected_service(name) {
+                Verdict::refuse("Service vital : RamScope refuse de le modifier.")
+            } else if from == &Some(*start) {
+                Verdict::refuse("Le service est déjà dans l'état demandé.")
+            } else {
+                Verdict::allow()
+            }
         }
         Action::StopService { name } if rules::is_protected_service(name) => {
             Verdict::refuse("Service vital : RamScope refuse de l'arrêter.")
         }
-        Action::Kill { pid, name } if rules::is_protected_process(name) || *pid <= 8 => {
-            Verdict::refuse("Processus vital : RamScope refuse de le terminer.")
+        Action::StartService { name } if rules::is_protected_service(name) => {
+            Verdict::refuse("Service vital : RamScope refuse de le démarrer.")
         }
-        Action::Kill { pid, .. } if *pid == self_pid => {
-            Verdict::refuse("RamScope ne peut pas se terminer lui-même")
+        Action::Startup {
+            enabled,
+            was_enabled,
+            ..
+        } if was_enabled == &Some(*enabled) => {
+            Verdict::refuse("L'entrée de démarrage est déjà dans l'état demandé.")
+        }
+        Action::Task {
+            enabled,
+            was_enabled,
+            ..
+        } if was_enabled == &Some(*enabled) => {
+            Verdict::refuse("La tâche est déjà dans l'état demandé.")
+        }
+        Action::Kill {
+            pid,
+            name,
+            image_path,
+            created_at,
+        } => {
+            if rules::is_protected_process(name) || *pid <= 8 {
+                Verdict::refuse("Processus vital : RamScope refuse de le terminer.")
+            } else if *pid == self_pid {
+                Verdict::refuse("RamScope ne peut pas se terminer lui-même")
+            } else if image_path.trim().is_empty() {
+                Verdict::refuse("Identité du processus incomplète : chemin manquant.")
+            } else if *created_at == 0 {
+                Verdict::refuse("Identité du processus incomplète : date de création manquante.")
+            } else {
+                Verdict::allow()
+            }
         }
         _ => Verdict::allow(),
     }
@@ -67,24 +121,73 @@ fn validate_one(action: &Action, self_pid: u32) -> Verdict {
 // Gains d'un lot
 // ---------------------------------------------------------------------------
 
+/// Contexte d'un service hébergé dans un processus partagé (`svchost.exe`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostGain {
+    /// PID du processus hôte.
+    pub pid: u32,
+    /// Nombre total de services qui partagent cet hôte.
+    pub services: u32,
+    /// Working set du processus hôte.
+    pub host_ram: u64,
+}
+
+/// Entrée d'agrégation : action, gains typés et, pour un service, son hôte.
+#[derive(Clone, Debug)]
+pub struct GainEntry {
+    pub action: Action,
+    pub gain: Gain,
+    pub gain_next_boot: Gain,
+    pub host: Option<HostGain>,
+}
+
 /// Totalise les gains d'un lot : chaque action distincte n'est comptée qu'une
 /// fois, même si elle apparaît deux fois dans la liste.
 ///
-/// `entries` associe une action à son gain immédiat et à son gain au prochain
-/// démarrage. La non-additivité entre services d'un même hôte relève de
-/// l'étape 3 du PLAN.md : cette fonction ne fait que dédoublonner.
-pub fn total_gains(entries: &[(Action, u64, u64)]) -> (u64, u64) {
-    let mut now = 0u64;
-    let mut boot = 0u64;
-    let mut seen: Vec<&Action> = Vec::new();
-    for (action, gain_now, gain_boot) in entries {
-        if seen.iter().any(|s| *s == action) {
+/// Règle d'hôte : un service hébergé ne compte que si **tous** les services de
+/// son hôte sont dans le lot. Le gain vaut alors la RAM de l'hôte, une seule
+/// fois. Jamais la somme des parts `host_ram / shared` : ces parts ne sont pas
+/// additives et un hôte maintenu en vie ne libère rien.
+pub fn total_gains(entries: &[GainEntry]) -> (Gain, Gain) {
+    let mut now = Gain::unavailable();
+    let mut boot = Gain::unavailable();
+    let mut seen: Vec<Action> = Vec::new();
+    // (pid, services attendus, RAM de l'hôte, noms des services du lot)
+    let mut hosts: Vec<(u32, u32, u64, Vec<String>)> = Vec::new();
+
+    for e in entries {
+        if seen.contains(&e.action) {
             continue;
         }
-        seen.push(action);
-        now += gain_now;
-        boot += gain_boot;
+        seen.push(e.action.clone());
+
+        if let (Action::Service { name, .. }, Some(h)) = (&e.action, &e.host) {
+            if h.services > 1 {
+                if let Some((_, expected, ram, names)) =
+                    hosts.iter_mut().find(|(pid, ..)| *pid == h.pid)
+                {
+                    *expected = (*expected).max(h.services);
+                    *ram = (*ram).max(h.host_ram);
+                    if !names.contains(name) {
+                        names.push(name.clone());
+                    }
+                } else {
+                    hosts.push((h.pid, h.services, h.host_ram, vec![name.clone()]));
+                }
+                continue;
+            }
+        }
+
+        now.merge(&e.gain);
+        boot.merge(&e.gain_next_boot);
     }
+
+    for (_, expected, host_ram, names) in hosts {
+        if expected > 1 && names.len() as u32 >= expected {
+            boot.merge(&Gain::estimated(host_ram, GainScope::Host));
+        }
+    }
+
     (now, boot)
 }
 
@@ -93,18 +196,8 @@ pub fn total_gains(entries: &[(Action, u64, u64)]) -> (u64, u64) {
 // ---------------------------------------------------------------------------
 
 /// Normalise une chaîne pour comparaison : minuscules uniquement.
-/// Le rognage et le repliement des espaces relèvent de l'étape 4 du PLAN.md.
 pub fn normalize(s: &str) -> String {
     s.to_lowercase()
-}
-
-/// Vrai si `key` apparaît dans l'un des champs.
-///
-/// Comportement conservé à l'étape 0, volontairement resserré à l'étape 4
-/// (défaut D9) : la correspondance par sous-chaîne sur une ligne de commande
-/// entière n'est pas fiable pour les clés courtes.
-pub fn key_matches(key: &str, fields: &[&str]) -> bool {
-    fields.iter().any(|f| f.contains(key))
 }
 
 // ---------------------------------------------------------------------------
@@ -128,10 +221,13 @@ mod tests {
 
     #[test]
     fn les_cles_des_tables_sont_uniques_et_non_vides() {
-        verifie_cles("SERVICES", rules::SERVICES.iter().map(|r| r.0).collect());
-        verifie_cles("PROCESSES", rules::PROCESSES.iter().map(|r| r.0).collect());
-        verifie_cles("STARTUP", rules::STARTUP.iter().map(|r| r.0).collect());
-        verifie_cles("TASKS", rules::TASKS.iter().map(|r| r.0).collect());
+        verifie_cles("SERVICES", rules::SERVICES.iter().map(|r| r.key).collect());
+        verifie_cles(
+            "PROCESSES",
+            rules::PROCESSES.iter().map(|r| r.key).collect(),
+        );
+        verifie_cles("STARTUP", rules::STARTUP.iter().map(|r| r.key).collect());
+        verifie_cles("TASKS", rules::TASKS.iter().map(|r| r.key).collect());
     }
 
     #[test]
@@ -141,6 +237,7 @@ mod tests {
                 Action::Service {
                     name: "RpcSs".into(),
                     start: StartType::Manual,
+                    from: None,
                 },
                 Action::StopService {
                     name: "WinDefend".into(),
@@ -148,10 +245,14 @@ mod tests {
                 Action::Kill {
                     pid: 4,
                     name: "System".into(),
+                    image_path: "C:\\Windows\\System32\\ntoskrnl.exe".into(),
+                    created_at: 1,
                 },
                 Action::Kill {
                     pid: 1234,
                     name: "ramscope.exe".into(),
+                    image_path: "C:\\ramscope.exe".into(),
+                    created_at: 1,
                 },
             ],
             1234,
@@ -168,6 +269,7 @@ mod tests {
             &[Action::Service {
                 name: "DiagTrack".into(),
                 start: StartType::Disabled,
+                from: None,
             }],
             1234,
         );
@@ -180,19 +282,170 @@ mod tests {
         let a = Action::Service {
             name: "DiagTrack".into(),
             start: StartType::Disabled,
+            from: None,
         };
         let b = Action::Startup {
             id: "hkcu_run|Spotify".into(),
             enabled: false,
+            was_enabled: None,
         };
-        let entries = vec![(a.clone(), 0, 10), (a, 0, 10), (b, 0, 5)];
-        assert_eq!(total_gains(&entries), (0, 15));
+        let entries = vec![
+            GainEntry {
+                action: a.clone(),
+                gain: Gain::unavailable(),
+                gain_next_boot: Gain::estimated(10, GainScope::Private),
+                host: None,
+            },
+            GainEntry {
+                action: a,
+                gain: Gain::unavailable(),
+                gain_next_boot: Gain::estimated(10, GainScope::Private),
+                host: None,
+            },
+            GainEntry {
+                action: b,
+                gain: Gain::unavailable(),
+                gain_next_boot: Gain::estimated(5, GainScope::Private),
+                host: None,
+            },
+        ];
+        let (now, boot) = total_gains(&entries);
+        assert_eq!(now.bytes, 0);
+        assert_eq!(boot.bytes, 15);
+    }
+
+    fn service_gain(name: &str, host_pid: u32, shared: u32, host_ram: u64, part: u64) -> GainEntry {
+        GainEntry {
+            action: Action::Service {
+                name: name.into(),
+                start: StartType::Manual,
+                from: Some(StartType::Auto),
+            },
+            gain: Gain::unavailable(),
+            gain_next_boot: Gain::estimated(part, GainScope::HostPart),
+            host: Some(HostGain {
+                pid: host_pid,
+                services: shared,
+                host_ram,
+            }),
+        }
+    }
+
+    #[test]
+    fn un_hote_ne_compte_que_si_tous_ses_services_sont_dans_le_lot() {
+        const MO: u64 = 1024 * 1024;
+        let host = [
+            service_gain("a", 980, 4, 400 * MO, 100 * MO),
+            service_gain("b", 980, 4, 400 * MO, 100 * MO),
+            service_gain("c", 980, 4, 400 * MO, 100 * MO),
+            service_gain("d", 980, 4, 400 * MO, 100 * MO),
+        ];
+        assert_eq!(total_gains(&host[..1]).1.bytes, 0);
+        assert_eq!(total_gains(&host[..3]).1.bytes, 0);
+        assert_eq!(total_gains(&host).1.bytes, 400 * MO);
+        assert_eq!(total_gains(&host).0.bytes, 0);
+    }
+
+    #[test]
+    fn deux_hotes_complets_s_additionnent() {
+        const MO: u64 = 1024 * 1024;
+        let entries = vec![
+            service_gain("a", 980, 2, 100 * MO, 50 * MO),
+            service_gain("b", 980, 2, 100 * MO, 50 * MO),
+            service_gain("c", 1040, 2, 200 * MO, 100 * MO),
+            service_gain("d", 1040, 2, 200 * MO, 100 * MO),
+        ];
+        assert_eq!(total_gains(&entries).1.bytes, 300 * MO);
+    }
+
+    #[test]
+    fn un_hote_incomplet_n_ajoute_rien_meme_avec_un_gain_immediat() {
+        const MO: u64 = 1024 * 1024;
+        let mut incomplete = service_gain("a", 980, 4, 400 * MO, 100 * MO);
+        incomplete.gain = Gain::estimated(90 * MO, GainScope::HostPart);
+        let entries = vec![incomplete];
+        let (now, boot) = total_gains(&entries);
+        assert_eq!(now.bytes, 0);
+        assert_eq!(boot.bytes, 0);
     }
 
     #[test]
     fn normalise_le_nom_avant_comparaison() {
         assert_eq!(normalize("DiagTrack"), "diagtrack");
-        assert!(key_matches("diagtrack", &["diagtrack"]));
-        assert!(!key_matches("diagtrack", &["spooler", "x"]));
+    }
+
+    #[test]
+    fn refuse_une_identite_de_processus_incomplete() {
+        let v = validate(
+            &[
+                Action::Kill {
+                    pid: 4242,
+                    name: "app.exe".into(),
+                    image_path: String::new(),
+                    created_at: 42,
+                },
+                Action::Kill {
+                    pid: 4242,
+                    name: "app.exe".into(),
+                    image_path: "C:\\app.exe".into(),
+                    created_at: 0,
+                },
+            ],
+            1,
+        );
+        assert!(!v[0].allowed && v[0].message.contains("chemin"));
+        assert!(!v[1].allowed && v[1].message.contains("création"));
+    }
+
+    #[test]
+    fn refuse_les_doublons_dans_un_lot() {
+        let a = Action::Service {
+            name: "DiagTrack".into(),
+            start: StartType::Disabled,
+            from: None,
+        };
+        let v = validate(&[a.clone(), a], 1);
+        assert!(v[0].allowed);
+        assert!(!v[1].allowed && v[1].message.contains("plusieurs fois"));
+    }
+
+    #[test]
+    fn refuse_un_lot_de_plus_de_400_actions() {
+        let a = Action::Service {
+            name: "DiagTrack".into(),
+            start: StartType::Disabled,
+            from: None,
+        };
+        let actions = vec![a; MAX_ACTIONS + 1];
+        let v = validate(&actions, 1);
+        assert_eq!(v.len(), MAX_ACTIONS + 1);
+        assert!(v.iter().all(|x| !x.allowed));
+        assert!(v[0].message.contains("400"));
+    }
+
+    #[test]
+    fn refuse_une_action_deja_appliquee() {
+        let v = validate(
+            &[
+                Action::Service {
+                    name: "DiagTrack".into(),
+                    start: StartType::Manual,
+                    from: Some(StartType::Manual),
+                },
+                Action::Startup {
+                    id: "hkcu_run|Spotify".into(),
+                    enabled: false,
+                    was_enabled: Some(false),
+                },
+            ],
+            1,
+        );
+        assert!(!v[0].allowed && v[0].message.contains("déjà"));
+        assert!(!v[1].allowed && v[1].message.contains("déjà"));
+    }
+
+    #[test]
+    fn accepte_un_lot_vide() {
+        assert!(validate(&[], 1).is_empty());
     }
 }

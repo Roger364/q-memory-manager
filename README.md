@@ -42,13 +42,15 @@ Sans `--demo` ni `--no-admin`, RamScope demande l'élévation (UAC) au lancement
 - **Commit, noyau, cache système** : compteurs système, via `GetPerformanceInfo`.
 - **Mémoire compressée** : working set du processus « Memory Compression ». C'est une approximation du compteur système, pas le compteur lui-même.
 - **RAM d'un service** : part du processus hôte (`RAM de l'hôte ÷ nombre de services hébergés`). Plusieurs services d'un même `svchost.exe` partagent la même mémoire : ces parts sont approximatives et ne s'additionnent pas.
-- **Gains** : un gain « tout de suite » correspond à une fermeture ou à un arrêt ; un gain « au prochain démarrage » correspond à un service passé en manuel ou à un démarrage désactivé. Ce sont des estimations, pas des mesures.
+- **Gains** : chaque gain porte sa nature — mesuré, estimé ou non chiffrable — et sa portée. Un gain « tout de suite » correspond à une fermeture ou à un arrêt ; un gain « au prochain démarrage » correspond à un service passé en manuel ou à un démarrage désactivé. Sans mesure, le gain est « non chiffrable », jamais inventé.
+- **Hôtes partagés** : la part d'un service dans un `svchost.exe` n'est pas additive. Un hôte ne compte que si tous ses services figurent dans le lot ; son gain vaut alors la RAM de l'hôte, une seule fois. Sinon, aucun gain n'est annoncé pour cet hôte.
+- **Arrêt immédiat** : cocher « Arrêter aussi les services maintenant » ne transforme pas un gain différé en gain immédiat. La mémoire disponible est mesurée avant et après l'application, avec une attente bornée ; le delta est affiché comme mesuré.
 
 ## Niveaux
 
 | Niveau | Sens |
 |---|---|
-| Vital | Composant dont l'arrêt casse Windows ou la session. Verrouillé. |
+| Vital | Composant dont l'arrêt casse Windows ou la session. |
 | Système | Composant Windows normal, à laisser tel quel. |
 | À garder | Utile pour ton usage (pilote, sécurité, usage quotidien). |
 | Selon usage | Le bon réglage dépend de ce que tu fais. |
@@ -56,7 +58,7 @@ Sans `--demo` ni `--no-admin`, RamScope demande l'élévation (UAC) au lancement
 | Superflu | Inutile dans la quasi-totalité des cas. |
 | Non répertorié | RamScope ne sait pas : aucune action proposée. |
 
-Les services et processus verrouillés sont refusés par le moteur, quel que soit le point d'entrée, et pas seulement masqués dans l'interface.
+Un cadenas signale un élément **verrouillé** : le serveur puis le moteur refusent toute action, quel que soit le point d'entrée, et pas seulement dans l'interface. Le verrou est distinct du niveau : un service verrouillé mais non vital garde son niveau de la table (par exemple « À garder ») et n'est plus étiqueté « Vital ». Les règles portent une provenance de famille, pas une revue individuelle : voir `SAFETY.md`.
 
 ## Actions
 
@@ -64,9 +66,16 @@ Les services et processus verrouillés sont refusés par le moteur, quel que soi
 - Entrée de démarrage : activée ou désactivée via le mécanisme `StartupApproved`, le même que le Gestionnaire des tâches.
 - Tâche planifiée : activée ou désactivée.
 - Arrêt immédiat d'un service.
-- Terminaison d'un processus : irréversible, sans restauration possible.
+- Terminaison d'un processus : irréversible, sans restauration possible. Le PID est rouvert avant l'action ; si le chemin d'image ou l'heure de création diffèrent de l'analyse, la terminaison est refusée.
 
-Chaque lot appliqué qui contient au moins une action réussie et réversible crée un point de restauration JSON. La restauration rejoue les actions inverses ; elle ne recrée pas un processus terminé.
+Chaque lot appliqué qui contient au moins une action réussie et réversible crée un point de restauration JSON ; un lot qui ne contient que des terminaisons n'en crée aucun. Le rapport exporté sépare le gain immédiat et le gain au prochain démarrage, avec la nature de chacun. La restauration rejoue les actions inverses ; elle ne recrée pas un processus terminé.
+
+## Interface de décision
+
+- La sélection de masse « Sélectionner les éléments réversibles à gain différé » ne coche que des services, démarrages et tâches classés « superflu » ou « à alléger » ; elle ne sélectionne jamais un processus.
+- « Terminer » reste une action directe : bouton rouge, étiquette « irréversible », jamais inclus dans un lot. La confirmation nomme le processus et rappelle que le travail non enregistré sera perdu.
+- Le bouton « Détails » ouvre, pour chaque ligne, la source détectée, l'état actuel, l'effet tout de suite, l'effet au prochain démarrage, la réversibilité et la justification.
+- La barre de sélection sépare le gain tout de suite et le gain au prochain démarrage ; chaque valeur porte son badge mesuré, estimé ou non chiffrable.
 
 ## Fichiers écrits
 
@@ -84,12 +93,12 @@ Hors Windows, `ramscope-data\` dans le répertoire courant, pour le développeme
 - L'en-tête `Host` est validé contre les adresses de la session : une requête portant un autre hôte, y compris par rebinding DNS, reçoit `403`, pages comprises.
 - Toute route `/api/` exige le jeton de session ; l'origine des mutations est comparée exactement au `Host`, sans comparaison par suffixe.
 - Le jeton reste présent dans la page servie, mais uniquement pour un `Host` autorisé.
-- La politique de contenu autorise encore les styles et le gestionnaire inline de l'interface actuelle (`'unsafe-inline'`) ; elle sera resserrée avec la refonte de l'interface.
+- La politique de contenu autorise encore les styles et le gestionnaire inline de l'interface actuelle (`'unsafe-inline'`) ; son resserrage reste à faire.
 
 ## Ce qui n'a pas été testé
 
 - Aucune action n'a été appliquée à une machine réelle dans le cadre des contrôles consignés : les parcours d'application et de restauration ont été exercés en mode démonstration.
 - La collecte réelle a été compilée (`cargo test`, `cargo build --release`) mais n'a pas été comparée ici au Gestionnaire des tâches ni à `services.msc`.
-- Les tests unitaires couvrent la validation des actions, la totalisation des gains et les invariants des tables de règles. Le détail des commandes et des codes retour figure dans `PLAN.md`.
+- Les 37 tests unitaires couvrent la validation des actions, l'identité simulée d'un processus, l'agrégation des gains par hôte, la nature des gains dans le rapport, l'audit des 601 règles (unicité, casse, modes, sources, verrous), le faux positif `php`/`hp` et l'absence d'action des heuristiques sans source. Les refus d'identité réelle (`win.rs`) restent non exercés sur un processus vivant ; le delta de mémoire mesuré a été vérifié en démonstration, où la mémoire simulée ne varie pas. La revue visuelle de l'étape 5 a ouvert les panneaux de détails et les modales dans Chromium ; elle n'a pas fait de parcours clavier avec de vraies frappes ni rouvert les fichiers exportés. Le détail des commandes et des codes retour figure dans `PLAN.md`.
 
 Voir `SAFETY.md` pour les limites d'usage et `PLAN.md` pour le plan de travail et les défauts connus.

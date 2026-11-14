@@ -4,7 +4,7 @@ Objectif : rendre l'inventaire mémoire et les conseils de démarrage plus exact
 
 Ce document est la version 3.1 du plan. La version 2 corrigeait la version 1, dont l'étape 0 annonçait comme livrés un README de présentation et un `SAFETY.md` qui n'existaient pas dans le dépôt. Un plan qui déclare terminé ce qui n'existe pas ne peut pas servir de référence : la règle de véracité ci-dessous existe pour empêcher que cela se reproduise.
 
-La version 3 (2026-11-13, audit du code contre le registre) apporte cinq amendements : (1) le versionnage : à l'audit, seul `README.md` était suivi par git, le projet et ce plan étaient hors de tout versionnage — un commit de baseline (`e5198a9`) existe désormais et sert de référence à la section 1 ; (2) l'agrégation des gains par hôte est précisée partout avec la même sémantique — somme des parts plafonnée à la RAM de l'hôte — car le critère de sortie de l'étape 3 se contredisait sur ce point ; (3) deux défauts du rapport exporté sont enregistrés (`D15`, `D16`) ; (4) la section 1 est révisée, datée et épinglée au commit de baseline ; (5) le décompte de règles inclut la table `PROCESSES` (602 règles, pas 405).
+La version 3 (2026-11-13, audit du code contre le registre) apporte cinq amendements : (1) le versionnage : à l'audit, seul `README.md` était suivi par git, le projet et ce plan étaient hors de tout versionnage — un commit de baseline (`e5198a9`) existe désormais et sert de référence à la section 1 ; (2) l'agrégation des gains par hôte est précisée partout avec la même sémantique — somme des parts plafonnée à la RAM de l'hôte — car le critère de sortie de l'étape 3 se contredisait sur ce point ; (3) deux défauts du rapport exporté sont enregistrés (`D15`, `D16`) ; (4) la section 1 est révisée, datée et épinglée au commit de baseline ; (5) le décompte de règles inclut la table `PROCESSES` (602 règles, pas 405 ; 601 après fusion du doublon `eventsystem`/`eventsysevent` à l'étape 4, voir 7.6).
 
 La version 3.1 (2026-11-14, relecture de la v3 contre le code) corrige quatre points : (1) le plafond `min(somme des parts, RAM de l'hôte)` ne peut jamais mordre sur les parts réelles — toutes égales à `host_ram / shared` — et laisse intact le vrai vice : un hôte dont un service reste nécessaire ne libère rien ; la règle devient « tous les services de l'hôte dans le lot, sinon zéro » ; (2) la section 1 est remise à l'état d'après l'étape 1, sans mélange d'époques ; (3) `D16` est rattaché à l'étape 3, qui le corrige, l'étape 5 n'en assurant que la garde ; (4) `demo.rs` entre aux périmètres des étapes 2 et 3. Elle consigne aussi la vérification navigateur de l'étape 1 (7.2).
 
@@ -31,25 +31,25 @@ Règles de tenue :
 
 ## 1. État vérifié du dépôt (point de référence)
 
-Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le 2026-11-14 après l'étape 1** ; le point de référence est le commit `e5198a9`, postérieur aux étapes 0 et 1 (section 7.0). Les lignes ci-dessous décrivent l'arbre à cette révision.
+Constat initial établi le 2026-11-13 en cours d'après-midi, sans modification du code. **Révisé le 2026-11-14 après l'étape 5** ; le point de référence reste le commit `e5198a9`, postérieur aux étapes 0 et 1 (section 7.0). Les lignes ci-dessous décrivent l'arbre à cette révision.
 
-| Élément | Constat révisé (2026-11-14) |
+| Élément | Constat révisé (2026-11-13) |
 |---|---|
-| Volume | 6 560 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 187) : `win.rs` 1 537, `rules.rs` 1 172, `demo.rs` 1 063, `server.rs` 526 (modifié à l'étape 1), `app.js` 748, `ffi.rs` 465, `model.rs` 316, `plan.rs` 198 (nouveau, étape 0), `util.rs` 180, `report.rs` 177, `main.rs` 103 (aide modifiée à l'étape 1, `mod plan` à l'étape 0), `platform.rs` 75 |
-| Base de règles | 602 règles : 262 services, 197 processus, 93 entrées de démarrage, 50 tâches |
-| Tests | 15 fonctions de test : 5 dans `plan.rs` (étape 0), 5 dans `rules.rs`, 5 dans `server.rs` (étape 1) ; `cargo test` code retour 0 sur les quinze, consigné au journal (7.2) |
+| Volume | 7 695 lignes de Rust et de JS (hors `index.html`, 62 lignes, et `style.css`, 202) : `win.rs` 1 675, `rules.rs` 1 365, `demo.rs` 1 191, `app.js` 873, `server.rs` 626, `ffi.rs` 480, `model.rs` 459, `plan.rs` 451, `util.rs` 180, `report.rs` 202, `main.rs` 102, `platform.rs` 91 |
+| Base de règles | 601 règles : 261 services, 197 processus, 93 entrées de démarrage, 50 tâches. Le plan annonçait 602 ; l'audit de l'étape 4 a révélé le doublon `eventsystem` / `eventsysevent`, fusionné (7.6) |
+| Tests | 37 fonctions de test : 12 dans `plan.rs`, 13 dans `rules.rs`, 9 dans `server.rs`, 2 dans `demo.rs`, 1 dans `report.rs` ; `cargo test` code retour 0 sur les trente-sept, consigné au journal (7.7) |
 | `cargo fmt --check` | **code retour 0** : D13 corrigé et consigné au journal (7.1) |
-| `cargo clippy` | **non exécuté** à ce stade |
-| Build release | **code retour 0** : binaire produit, consigné au journal (7.2) |
+| `cargo clippy` | **code retour 0** : `cargo clippy --all-targets -- -D warnings`, consigné au journal (7.6) |
+| Build release | **code retour 0** : binaire produit, consigné au journal (7.6) |
 | Rapport présent | `ramscope/ramscope-data/rapports/ramscope-2026-11-13-19-14-44.json` porte `"demo": true` : ce sont des données simulées, pas une mesure de la machine |
-| `README.md` | réécrit à l'étape 0 ; `Host`, origine et jeton sont couverts par des tests nommés dans `server.rs`. La phrase « refusés par le moteur et par le serveur » est corrigée en « par le moteur, quel que soit le point d'entrée » : `server.rs` ne valide pas encore lui-même, `win.rs` appelle `plan::validate` (ligne 1462) ; la validation côté serveur est prévue à l'étape 2 |
-| `SAFETY.md` | créé à l'étape 0 ; complété par les défauts connus D2, D8 et D3–D6, pour ne pas laisser croire que seuls les chiffres sont approximatifs |
+| `README.md` | réécrit à l'étape 0 ; `Host`, origine et jeton sont couverts par des tests nommés dans `server.rs`. La validation serveur et les garde-fous moteur sont décrits (deux verrous, étape 2) ; les gains typés (étape 3), le cadenas distinct du niveau et la provenance de famille (étape 4), puis l'interface de décision (étape 5) sont documentés |
+| `SAFETY.md` | créé à l'étape 0 ; complété par les limites des gains typés (étape 3), la séparation verrou/gravité et les limites de provenance des règles (étape 4), puis les garde-fous de sélection (étape 5) |
 | Versionnage | avant le commit de baseline : un seul fichier suivi (`README.md`) ; remote configuré (`lupeka1/q-memory-manager`), rien poussé |
 | Compilation Windows | `cargo test` compile `win.rs` : la cible Windows est vérifiable ici. Seule l'application réelle des actions demande une VM ou un instantané |
 
 Conséquence de méthode : la vérification n'est plus regroupée en fin de parcours. Chaque étape se termine par son propre contrôle, et `cargo fmt --check` doit repasser à 0 dès l'étape 0 — sinon l'étape 6 échouerait après six étapes de travail non validées.
 
-Écart relevé à la révision précédente, clos par correction de la documentation : `README.md` affirmait le refus « par le moteur et par le serveur », alors que `server.rs` ne validait pas lui-même. La vérification montre que `win.rs` — le moteur — appelle `plan::validate` (ligne 1462) avant d'agir : le refus est réel quel que soit le point d'entrée, mais il n'existe pas de seconde validation dans `server.rs`. Le README dit désormais « par le moteur, quel que soit le point d'entrée » ; l'étape 2 ajoutera la validation serveur avant `backend.apply`.
+Écart relevé à la révision précédente, clos par correction de la documentation : `README.md` affirmait le refus « par le moteur et par le serveur », alors que `server.rs` ne validait pas lui-même. La vérification montre que `win.rs` — le moteur — appelle `plan::validate` (ligne 1462) avant d'agir : le refus est réel quel que soit le point d'entrée, mais il n'existe pas de seconde validation dans `server.rs`. Le README disait alors « par le moteur, quel que soit le point d'entrée » ; l'étape 2 a ajouté la validation serveur avant `backend.apply` (7.4).
 
 ## 2. Invariants de conception
 
@@ -73,23 +73,26 @@ Chaque défaut est rattaché à une étape. Un défaut n'est fermé que lorsque 
 | ID | Sévérité | Localisation | Constat |
 |---|---|---|---|
 | D1 | P0 | `server.rs` — `handle()`, injection du jeton dans `index.html` | Le jeton de session est servi dans la page, l'en-tête `Host` n'est jamais validé, et le contrôle d'origine fait `origin.ends_with(host)`. Une page malveillante résolue vers `127.0.0.1` (DNS rebinding) lit `/`, récupère le jeton, puis poste sur `/api/apply` : son origine se termine par le même hôte, le contrôle passe. Corrigé à l'étape 1 (7.2) |
-| D2 | P0 | `win.rs` — `kill_process`, `model.rs` — `Action::Kill` | L'action ne transporte que `pid` et `name`. Le contrôle porte sur le nom protégé, `pid > 8` et l'auto-terminaison, pas sur l'identité du processus. Un PID recyclé entre la collecte et le clic fait terminer le mauvais programme |
-| D3 | P1 | `web/app.js` — `selTotals()`, `confirmApply()` | Le gain différé d'un service est ajouté au gain « tout de suite » quand l'option « Libérer la RAM maintenant » est cochée, puis le total différé est mis à zéro. Du différé est présenté comme de l'immédiat, et le gain des entrées de démarrage sélectionnées disparaît |
-| D4 | P1 | `rules.rs` — `process_advice` | Toute application tierce sans fenêtre au-dessus de 150 Mo reçoit une action `Kill`. C'est une action destructive fondée sur un seuil de RAM et un état de fenêtre, ce que le plan interdit par ailleurs |
-| D5 | P1 | `rules.rs` — `startup_advice` | Un gain de 60 Mo (ou 40 Mo selon la branche) est fabriqué quand aucune mesure n'existe. Une valeur inventée présentée comme un gain estimé |
-| D6 | P1 | `win.rs` — collecte des services, `plan_gain_next_boot` | La part d'un service vaut `host_ram / shared`, puis ces parts sont additionnées. Trois services d'un même hôte produisent un total supérieur à la RAM libérable. Le plafond `min(somme, RAM)` proposé par la v3 est inopérant sur des parts égales ; la v3.1 prescrit « tous les services de l'hôte ou zéro » |
-| D7 | P1 | `rules.rs` — `is_protected_service` / `service_advice` | Les services protégés sortent en `Level::Critical`, donc étiquetés « Vital », alors que la table les classe `Keep` : `wuauserv`, `themes`, `msiserver`, `defragsvc`, `w32time`. Protection et gravité sont confondues |
-| D8 | P1 | `main.rs` — aide, `web/app.js` — en-tête de confirmation | L'aide affirme « Toutes les modifications sont réversibles » et la modale commence par « Rien n'est supprimé », alors que `Action::Kill` n'a pas d'annulation. La modale se contredit deux lignes plus bas |
-| D9 | P2 | `rules.rs` — `startup_advice`, `service_advice` | Correspondance par sous-chaîne sur le nom et sur la ligne de commande entière, avec des clés courtes (`hp`, `wps`, `wsl`, `zoom`, `plex`). Une règle peut s'appliquer à un programme qui n'a rien à voir |
-| D10 | P2 | `rules.rs` — table `SERVICES` | La clé `ngcctorSvc` est la seule en majuscules alors que le nom du service est mis en minuscules : la règle ne peut jamais correspondre |
-| D11 | P2 | `rules.rs` — `process_advice` | La branche spécifique `svchost.exe` est inatteignable, `svchost.exe` figurant dans `PROTECTED_PROCESSES` et traité en amont |
+| D2 | P0 | `win.rs` — `kill_process`, `model.rs` — `Action::Kill` | L'action ne transporte que `pid` et `name`. Le contrôle porte sur le nom protégé, `pid > 8` et l'auto-terminaison, pas sur l'identité du processus. Un PID recyclé entre la collecte et le clic fait terminer le mauvais programme. Corrigé à l'étape 2 (7.4) : `image_path` et `created_at` sont revérifiés sur le PID rouvert avant `TerminateProcess` |
+| D3 | P1 | `web/app.js` — `selTotals()`, `confirmApply()` | Le gain différé d'un service est ajouté au gain « tout de suite » quand l'option « Libérer la RAM maintenant » est cochée, puis le total différé est mis à zéro. Du différé est présenté comme de l'immédiat, et le gain des entrées de démarrage sélectionnées disparaît. Corrigé à l'étape 3 (7.5) : conversion supprimée, deux lignes distinctes, delta mesuré après l'arrêt |
+| D4 | P1 | `rules.rs` — `process_advice` | Toute application tierce sans fenêtre au-dessus de 150 Mo reçoit une action `Kill`. C'est une action destructive fondée sur un seuil de RAM et un état de fenêtre, ce que le plan interdit par ailleurs. Corrigé à l'étape 3 (7.5) : seuil et branches heuristiques supprimés, processus non répertorié sans fenêtre → `Unknown`, aucune action |
+| D5 | P1 | `rules.rs` — `startup_advice` | Un gain de 60 Mo (ou 40 Mo selon la branche) est fabriqué quand aucune mesure n'existe. Une valeur inventée présentée comme un gain estimé. Corrigé à l'étape 3 (7.5) : constantes supprimées, gain `unavailable` → « non chiffrable » |
+| D6 | P1 | `win.rs` — collecte des services, `plan_gain_next_boot` | La part d'un service vaut `host_ram / shared`, puis ces parts sont additionnées. Trois services d'un même hôte produisent un total supérieur à la RAM libérable. Le plafond `min(somme, RAM)` proposé par la v3 est inopérant sur des parts égales ; la v3.1 prescrit « tous les services de l'hôte ou zéro ». Corrigé à l'étape 3 (7.5) : `plan::total_gains` et l'interface appliquent la règle, hôte complet seulement |
+| D7 | P1 | `rules.rs` — `is_protected_service` / `service_advice` | Les services protégés sortent en `Level::Critical`, donc étiquetés « Vital », alors que la table les classe `Keep` : `wuauserv`, `themes`, `msiserver`, `defragsvc`, `w32time`. Protection et gravité sont confondues. Corrigé à l'étape 4 (7.6) : `Advice.locked` porte le refus, `Level` reste celui de la table ; `wuauserv` reste « À garder » + cadenas, `Critical` réservé aux composants vitaux |
+| D8 | P1 | `main.rs` — aide, `web/app.js` — en-tête de confirmation | L'aide affirme « Toutes les modifications sont réversibles » et la modale commence par « Rien n'est supprimé », alors que `Action::Kill` n'a pas d'annulation. La modale se contredit deux lignes plus bas. Corrigé à l'étape 2 (7.4) : aide et modale distinguent les changements de configuration de la terminaison. Volet interface fermé à l'étape 5 (7.7) : sélections de masse renommées, `Kill` hors des lots et confirmation comptant réversible/irréversible |
+| D9 | P2 | `rules.rs` — `startup_advice`, `service_advice` | Correspondance par sous-chaîne sur le nom et sur la ligne de commande entière, avec des clés courtes (`hp`, `wps`, `wsl`, `zoom`, `plex`). Une règle peut s'appliquer à un programme qui n'a rien à voir. Corrigé à l'étape 4 (7.6) : modes explicites et comparaisons exactes ; test `php` ≠ `hp` |
+| D10 | P2 | `rules.rs` — table `SERVICES` | La clé `ngcctorSvc` est la seule en majuscules alors que le nom du service est mis en minuscules : la règle ne peut jamais correspondre. Corrigé à l'étape 4 (7.6) : `ngcctorsvc` ; l'audit de casse couvre désormais les quatre tables |
+| D11 | P2 | `rules.rs` — `process_advice` | La branche spécifique `svchost.exe` est inatteignable, `svchost.exe` figurant dans `PROTECTED_PROCESSES` et traité en amont. Corrigé à l'étape 4 (7.6) : branche supprimée, liste des services hébergés reprise dans le conseil, test dédié |
+| D17 | P2 | `rules.rs` — table `SERVICES` | La table comptait `eventsystem` et `eventsysevent`, deux clés pour le même service COM+ Event System ; la seconde ne correspond à aucun service Windows. L'audit d'unicité de l'étape 4 l'a révélée. Corrigé à l'étape 4 (7.6) : doublon fusionné, total réel 601 règles et non 602 |
 | D12 | P2 | `main.rs`, `server.rs` — option `--host` | `--host 0.0.0.0` est accepté alors que l'aide annonce une écoute en boucle locale uniquement. Cela exposerait jeton et actions au réseau local. Corrigé à l'étape 1 (7.2) : seules les adresses de boucle locale sont acceptées |
 | D13 | P2 | Dépôt entier | `cargo fmt --check` échouait : 66 hunks dans 7 fichiers. Corrigé dans l'arbre de travail (code retour 0 à 23 h 47) ; fermeture au journal à l'étape 0 |
 | D14 | P2 | `README.md`, `SAFETY.md` | Le plan v1 les déclarait livrés ; le README était un stub de deux lignes et `SAFETY.md` était absent. Les deux existent depuis l'étape 0, avec la réserve de vérité notée en section 1 |
-| D15 | P1 | `report.rs` — `build()`, colonnes « Gain » | Le rapport exporté additionne gain immédiat et gain différé dans une même cellule (`gain + gain_next_boot`), pour les services comme pour le démarrage. Même vice que D3, dans l'export ; l'étape 3 cite le rapport dans son critère de sortie sans l'avoir à son périmètre. Le tri et le total de section de `web/app.js` (lignes 289 et 394-395) mélangent les mêmes deux gains |
-| D16 | P2 | `report.rs` — ligne « rien à optimiser » | « Rien à optimiser sans risque » emploie une formulation que l'étape 5 bannit, hors du périmètre de son contrôle (limité à `src/web/`). À corriger à l'étape 3 avec le reste du rapport ; l'étape 5 n'en assurera que la garde de régression. La justification `rules.rs` « Désactivable sans risque » est conservée : elle qualifie un élément précis, pas une sélection de masse |
+| D15 | P1 | `report.rs` — `build()`, colonnes « Gain » | Le rapport exporté additionne gain immédiat et gain différé dans une même cellule (`gain + gain_next_boot`), pour les services comme pour le démarrage. Même vice que D3, dans l'export ; l'étape 3 cite le rapport dans son critère de sortie sans l'avoir à son périmètre. Le tri et le total de section de `web/app.js` (lignes 289 et 394-395) mélangent les mêmes deux gains. Corrigé à l'étape 3 (7.5) : colonnes séparées dans le rapport et l'interface, tri sur le gain immédiat |
+| D16 | P2 | `report.rs` — ligne « rien à optimiser » | « Rien à optimiser sans risque » emploie une formulation que l'étape 5 bannit, hors du périmètre de son contrôle (limité à `src/web/`). À corriger à l'étape 3 avec le reste du rapport ; l'étape 5 n'en assurera que la garde de régression. La justification `rules.rs` « Désactivable sans risque » est conservée : elle qualifie un élément précis, pas une sélection de masse. Corrigé à l'étape 3 (7.5) : « Rien à optimiser : configuration déjà saine » |
+| D18 | P2 | `web/app.js` — fermeture du fond de modale | Un clic sur un bouton qui ouvre une modale après un appel réseau (export) peut être reçu par le masque apparu entre l'appui et le relâchement : la modale s'ouvre puis se referme aussitôt. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : fermeture seulement si l'appui a commencé sur le fond ; test `le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite` |
+| D19 | P2 | `web/style.css` — media query petit écran | À 390 px de large, `.hero` conservait une première colonne de 320 px et des cartes de 150 px : la grille dépassait la fenêtre et la deuxième carte était coupée. Observé pendant la revue de l'étape 5. Corrigé à l'étape 5 (7.7) : `.hero` sur une colonne, machine pleine largeur et chemins d'export coupés ; capture `ramscope-step5-mobile-fixed.png` |
 
-D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2).
+D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est conforme et la documentation existe. D1 et D12 sont corrigés par l'étape 1 (contrôles en 7.2). D2 et D8 sont corrigés par l'étape 2 (7.4), le volet interface de D8 à l'étape 5 (7.7). D3, D4, D5, D6, D15 et D16 sont corrigés par l'étape 3 (7.5). D7, D9, D10, D11 et D17 sont corrigés par l'étape 4 (7.6). D18 et D19 sont corrigés par l'étape 5 (7.7).
 
 ## 4. Étapes
 
@@ -141,7 +144,7 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 - En-têtes de durcissement : `Content-Security-Policy: default-src 'self'`, `X-Frame-Options: DENY`, `Cross-Origin-Resource-Policy: same-origin`, en plus de `nosniff`, `no-referrer` et `no-store` déjà présents.
 - Fermer `--host` (D12) : seules les adresses de boucle locale (`127.0.0.1`, `localhost`) sont acceptées, toute autre valeur refuse le démarrage, et l'aide décrit exactement ce comportement. La variante « retirer l'option » n'a pas été retenue : le nom est conservé, les valeurs sont fermées.
 
-**Livré le 2026-11-13.** `--host` n'accepte plus que `127.0.0.1` et `localhost` ; toute autre valeur refuse le démarrage (test unitaire). `Host` est validé exactement pour toutes les routes, pages comprises. L'origine est comparée en schéma, hôte et port, sans suffixe. Le jeton est exigé sur tout `/api/` et comparé sans sortie anticipée. CSP, `X-Frame-Options` et `Cross-Origin-Resource-Policy` sont ajoutés. Le jeton reste dans la page, ce que couvre la validation de `Host` ; la CSP conserve `'unsafe-inline'` pour les styles et gestionnaires inline actuels, à resserrer à l'étape 5.
+**Livré le 2026-11-13.** `--host` n'accepte plus que `127.0.0.1` et `localhost` ; toute autre valeur refuse le démarrage (test unitaire). `Host` est validé exactement pour toutes les routes, pages comprises. L'origine est comparée en schéma, hôte et port, sans suffixe. Le jeton est exigé sur tout `/api/` et comparé sans sortie anticipée. CSP, `X-Frame-Options` et `Cross-Origin-Resource-Policy` sont ajoutés. Le jeton reste dans la page, ce que couvre la validation de `Host` ; la CSP conserve `'unsafe-inline'` pour les styles et le gestionnaire inline restant ; ce resserrage n'a pas été fait à l'étape 5 et reste ouvert.
 
 **Critère de sortie.**
 
@@ -188,6 +191,8 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 ### Étape 3 — Vérité des chiffres
 
+**État.** Terminée le 2026-11-13 — contrôles et codes retour en 7.5.
+
 **Objectif.** Qu'aucun gain affiché ne soit faux : ni inventé, ni additionné à tort, ni présenté comme immédiat quand il est différé.
 
 **Périmètre.** `model.rs` — `Advice`, `MemoryInfo` ; `rules.rs` — `service_advice`, `process_advice`, `startup_advice` ; `win.rs` — `memory_info`, collecte des services, agrégation du plan ; `web/app.js` — totaux et rendu ; `report.rs` — colonnes « Gain » du rapport exporté (D15, D16) ; `demo.rs` — agrégation simulée.
@@ -219,9 +224,11 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 
 ### Étape 4 — Règles : schéma et provenance
 
+**État.** Terminée le 2026-11-13 avec un écart de comptage documenté — contrôles et codes retour en 7.6. Le total réel est 601 règles : l'audit a révélé un doublon `eventsystem` / `eventsysevent` dans les 602 annoncées (D17).
+
 **Objectif.** Savoir pourquoi une règle existe, sur quoi elle s'applique exactement, et depuis quand elle n'a pas été revue.
 
-**Périmètre.** `rules.rs` — tables `SERVICES`, `STARTUP`, `TASKS`, `PROCESSES`, `PROTECTED_*` ; `model.rs` — `Level`, nouveau champ de verrou.
+**Périmètre.** `rules.rs` — tables `SERVICES`, `STARTUP`, `TASKS`, `PROCESSES`, `PROTECTED_*` ; `model.rs` — `Advice.locked`, distinct de `Level`.
 
 **Changements.**
 
@@ -245,6 +252,8 @@ D13 et D14 sont corrigés par l'étape 0 (contrôles en 7.1) : le formatage est 
 ---
 
 ### Étape 5 — Interface de décision
+
+**État.** Terminée le 2026-11-14 — contrôles et codes retour en 7.7. La revue visuelle a révélé et fait corriger deux défauts d'interface (D18 : fermeture prématurée de la modale d'export ; D19 : débordement horizontal à 390 px).
 
 **Objectif.** Que l'utilisateur comprenne pourquoi un élément est listé, ce que l'action change, ce qu'elle ne change pas, et ce qui est réversible — avant de confirmer.
 
@@ -388,16 +397,109 @@ Non exécuté à cette étape : lancement avec `--host 0.0.0.0` (le refus est co
 
 Relecture du plan v3 contre le code, sans modification du code applicatif. Confirmés : décompte 602 (262 + 197 + 93 + 50), D15 (`report.rs:92,104`), D16 (`report.rs:121`), D6 (`win.rs:1085-1096`). Corrigés dans le plan : règle d'agrégation « tous les services de l'hôte ou zéro », section 1 remise à l'état d'après l'étape 1, rattachement de D16 à l'étape 3, périmètres 2 et 3 incluant `demo.rs`, lignes D1/D12 marquées corrigées, `app.js:289,394-395` enregistré dans D15. `README.md` et `SAFETY.md` corrigés. Aucune ligne de code Rust ou JS modifiée.
 
+### 7.4 Étape 2 — contrôles exécutés (2026-11-13)
+
+| Commande | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence |
+| `cargo test` | 0 | 22 tests, 22 réussis, dont 7 nouveaux : 5 dans `plan.rs`, 2 dans `demo.rs` |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9 s |
+| `POST /api/apply` — `Kill` sans `image_path` | 403 | « Identité du processus incomplète : chemin manquant. » |
+| `POST /api/apply` — lot de 401 actions | 400 | « trop d'actions d'un coup (max 400) » (plafond du serveur, avant `plan::validate`) |
+| `POST /api/apply` — doublon de service | 403 | « Action présente plusieurs fois dans le lot. » |
+| `POST /api/apply` — service avec `from` périmé | 200 | `ok: false`, « l'état du service a changé depuis l'analyse : action refusée » |
+| `POST /api/apply` — service déjà dans l'état demandé | 403 | « Le service est déjà dans l'état demandé. » |
+| `POST /api/apply` — `Kill` d'identité correcte (démo) | 200 | `ok: true`, `rollback_id: null` : aucune action réversible, aucun point vide |
+| `POST /api/apply` — `Kill` avec `created_at` divergent (démo) | 200 | `ok: false`, « l'identité du processus a changé depuis l'analyse : action refusée », `rollback_id: null` |
+| `grep -n "réversible" src/main.rs src/web/app.js` | 0 | chaque occurrence est qualifiée ; plus aucune promesse générale |
+| Interface — bouton « Sélectionner les conseillés » de l'onglet Processus | — | message explicite, `0 sélectionné`, aucune case cochée |
+| Interface — modale d'un `Kill` (Widgets.exe) | — | « La terminaison d'un processus est définitive » ; plus de « Rien n'est supprimé » ; avertissement sur le travail non enregistré |
+
+Le cas « PID recyclé » n'est pas reproductible sur une machine réelle dans ce contrôle : il est couvert par le test démo et par la comparaison `created_at` + chemin dans `win.rs`, non exécutée sur un processus réel. Aucune action réelle n'a été appliquée.
+
+### 7.5 Étape 3 — contrôles exécutés (2026-11-13)
+
+| Commande | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence |
+| `cargo test` | 0 | 29 tests, 29 réussis, dont 7 nouveaux : 3 dans `plan.rs`, 2 dans `rules.rs`, 1 dans `server.rs`, 1 dans `report.rs` |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9 s |
+| `node --check src/web/app.js` | 0 | syntaxe JavaScript valide |
+| `grep -rn "150 \* 1024 \* 1024\|60 \* 1024 \* 1024\|40 \* 1024 \* 1024" src/` | 1 | aucun résultat |
+| Snapshot démo — agrégation | — | `plan_gain_next_boot` = 1 148 190 720 octets ; même valeur recalculée à partir des entrées ; somme brute des parts = 212 860 926 octets ; 1 hôte complet, 10 incomplets |
+| Interface — 2 des 3 services de l'hôte 4810 sélectionnés | — | « Gain : non chiffrable » |
+| Interface — 3 des 3 services du même hôte sélectionnés | — | « 18 Mo (estimé) au prochain démarrage », une seule fois |
+| Interface — modale avec arrêt immédiat (Bonjour Service) | — | « Tout de suite : non chiffrable » / « Au prochain démarrage : 14 Mo (estimé) » : le différé n'est plus déplacé |
+| Interface — résultat d'un arrêt immédiat | — | « Mémoire disponible mesurée : 7,46 Go → 7,46 Go (+0 Mo, mesuré) » |
+| Rapport exporté | — | colonnes « Tout de suite » et « Au prochain démarrage », nature `(estimé)`/`non chiffrable`, « Rien à optimiser sans risque » absent |
+| `used = total - available` sur le snapshot démo | — | vrai |
+
+La seule occurrence restante de « sans risque » dans le rapport est la justification « Désactivable sans risque » d'une entrée de démarrage, explicitement autorisée par le plan. Aucune action réelle n'a été appliquée ; les contrôles d'arrêt et de mesure ont été exécutés en mode démonstration, où la mémoire simulée ne varie pas (delta mesuré nul).
+
+### 7.6 Étape 4 — contrôles exécutés (2026-11-13)
+
+| Commande | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence |
+| `cargo test` | 0 | 34 tests, 34 réussis, dont 5 nouveaux dans `rules.rs` : audit des tables, verrou non vital, liste `svchost`, `php` ≠ `hp`, absence d'action des heuristiques sans source |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit |
+| `node --check src/web/app.js` | 0 | syntaxe JavaScript valide |
+| Audit `audit_des_regles` | 0 | 601 règles : 261 services, 197 processus, 93 démarrages, 50 tâches ; zéro doublon par table, zéro clé en majuscules, modes fixes par table, toute action avec justification, tout `Critical` dans une liste de verrouillage, tout service verrouillé dans la table |
+| `grep -nE "command.*contains"` sur `startup_advice` | 1 | aucun résultat : plus de `contains` sur la ligne de commande ; les heuristiques de repli ont été supprimées, hors table aucune action |
+| `grep -rn "key_matches" src/` | 1 | aucun résultat : l'ancien matching par sous-chaîne a été supprimé |
+| `grep -rn "ngcctorSvc\|eventsysevent" src/` | 1 | aucun résultat : clés corrigées ou fusionnées |
+| Règles sans source | — | 0 / 601 : chaque entrée porte une provenance de famille non vide |
+| Règles avec date de revue individuelle | — | 0 / 601 : la valeur est `non datée`. La migration de schéma n'est pas une revue de fond ; aucune date de revue ne lui est attribuée |
+
+Le plan annonçait 602 règles. L'audit a montré que `eventsystem` et `eventsysevent` désignaient le même service COM+ Event System ; la seconde clé ne correspond à aucun service Windows (vérifié sur la documentation de service Windows 11). Le doublon a été fusionné : le total réel est 601. Conserver une entrée fictive pour atteindre 602 aurait été un chiffre faux.
+
+La provenance est une **source de famille**, pas une URL vérifiée règle par règle : « table RamScope héritée » plus une référence de famille (Microsoft Learn, documentation des éditeurs, Gestionnaire des tâches, Planificateur de tâches). Les justifications n'ont pas été revérifiées individuellement ; `reviewed = "non datée"` rend ce doute visible au lieu de le masquer. Toutes les actions restantes viennent d'une règle de table à source non vide ; les heuristiques de repli qui proposaient une action sans règle ni source ont été supprimées. Une future entrée sans source devra rester `Unknown`.
+
+Le mode des tâches est un suffixe exact à frontière de composant (ou un nom de composant exact), plus strict que le « préfixe de chemin » envisagé dans le plan : il évite qu'une clé courte ne s'applique à un chemin plus long. Les listes `PROTECTED_*` restent des listes de noms, sans niveau ni action ; l'audit vérifie leur cohérence avec les tables. Le cadenas est affiché par `web/app.js` (`Advice.locked`) ; l'interface n'a pas été ouverte dans un navigateur pour cette étape, seul `node --check` a validé la syntaxe.
+
+### 7.7 Étape 5 — contrôles exécutés (2026-11-14)
+
+| Commande / contrôle | Code retour | Observation |
+|---|---|---|
+| `cargo fmt --check` | 0 | aucune différence après reformatage du test ajouté |
+| `cargo test` | 0 | 37 tests, 37 réussis, dont 3 ajoutés dans `server.rs` : formulations bannies, refus de `Kill` dans un lot, fermeture du fond de modale sur un appui commencé sur le fond |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune erreur |
+| `cargo build --release` | 0 | binaire produit en 9,48 s après arrêt du serveur qui verrouillait l'exécutable ; premier essai à 101 (`Accès refusé`) tant que l'ancien binaire tournait |
+| `node --check src/web/app.js` | 0 | syntaxe JavaScript valide |
+| `grep -rn "sans risque\|aucun risque réel\|gain net" src/web/ src/report.rs` | 1 | aucun résultat |
+| Démo — `GET /` | 200 | page servie sur `http://127.0.0.1:8876` en mode démonstration |
+| Démo — chargement et vue d'ensemble | — | 5 cartes mémoire ; « Récupérable au prochain démarrage » 1,07 Go, « Récupérable tout de suite » 4,34 Go ; aucune ligne sélectionnée au départ |
+| Démo — filtre `spotify` | — | une seule ligne, le démarrage Spotify ; les autres sections disparaissent |
+| Démo — sélection de masse | — | 35 éléments sélectionnés ; barre : « 35 sélectionnés », « Gain : 1,07 Go estimé », « Au prochain démarrage » ; aucun processus dans la sélection |
+| Démo — confirmation du lot | — | « Confirmer 35 changements », « 35 actions réversibles · 0 irréversible », « Aucun processus n'est terminé », point de restauration annoncé |
+| Démo — application d'un lot | — | un service sélectionné (`dmwappushservice`) : « 1 action réversible · 0 irréversible », puis « Application : 1/1 réussi » et point de restauration `c65a25ad12f78b45` créé ; message de résultat corrigé en « Un service reconfiguré (manuel ou désactivé)… » |
+| Démo — panneau de détails | — | `dmwappushservice` : source détectée, état « Arrêté · Manuel », effet tout de suite et au prochain démarrage, réversibilité, justification, nom court, compte, PID hôte |
+| Démo — `Kill` seul | — | « Confirmer 1 changement », « 0 action réversible · 1 irréversible », processus nommé `chrome.exe (PID 5520)`, avertissement de perte de travail, « Tout de suite : 402 Mo estimé », « Au prochain démarrage : non chiffrable » |
+| Démo — restauration | — | « Restauration : 1/1 réussi », point consommé, `dmwappushservice` revenu à `Manuel`, compteur `Restauration` passé de 7 à 6 ; un second essai sur un point antérieur avait déjà donné 1/1 |
+| Démo — export | — | modale « Rapport exporté » visible après correction de D18 ; chemins HTML et JSON renvoyés sous `%LOCALAPPDATA%\RamScope\rapports\` ; fichiers non rouverts dans ce contrôle |
+| Démo — petit écran 390 × 844 | — | après correction de D19 : une seule colonne, en-tête replié, tableaux défilant horizontalement, modale d'export sans débordement |
+| Démo — clavier | — | en-têtes de tri `role="button"`, `tabindex="0"` ; un événement `Enter` sur `PID` change le premier PID de 5520 à 5920 ; `Échap` ferme la modale et rend le focus au bouton d'ouverture. Événements clavier synthétiques, pas un parcours de frappes réelles |
+| Contrastes | — | calcul des couleurs : `#e8edf5` sur `#111827` 15,09:1 ; `#8b98ad` sur `#111827` 6,08:1 ; `#7b879c` sur `#111827` 4,89:1 ; badges 5,65 à 11,23:1 ; `#fcd34d` sur `#1c1706` 12,40:1 |
+
+La revue a exercé les parcours charger, filtrer, sélectionner, confirmer, appliquer et restaurer en démonstration, puis exporter ; aucune action réelle n'a été demandée ni exécutée hors démonstration. Le message de résultat d'un service désactivé, qui parlait encore de « service passé en manuel », a été corrigé pendant la revue. Deux défauts non prévus ont été trouvés et corrigés dans la même étape. **D18** : la modale d'export s'ouvrait après un appel réseau et le clic en cours pouvait être reçu par le masque, qui la refermait aussitôt ; la fermeture exige désormais un appui commencé sur le fond (`pointerdown`), et un test statique interdit le retour à l'ancien gestionnaire. **D19** : à 390 px, la grille `.hero` conservait des largeurs minimales qui la faisaient déborder ; elle passe sur une colonne et les chemins d'export se coupent.
+
+Limites : la restauration et l'export ont été exercés en mode démonstration ; le contenu des deux fichiers exportés n'a pas été rouvert. La navigation clavier n'a pas été parcourue avec de vraies frappes dans ce navigateur : les gestionnaires ont été sollicités par événements synthétiques. Le rendu a été regardé à 1600 × 900 et 390 × 844, pas sur d'autres tailles ni avec un lecteur d'écran. Aucun contraste n'a été mesuré sur une capture, seulement calculé à partir des couleurs du thème. La CSP n'a pas été resserrée : `'unsafe-inline'` reste nécessaire pour les styles et un gestionnaire inline (`elevate()`), ce point reste ouvert.
+
+Captures : `ramscope-step5-final-2026-11-14.png` (bureau), `ramscope-step5-mobile-fixed.png` (390 px), `ramscope-step5-export-mobile.png` (export), `ramscope-step5-confirm.png` (lot réversible), `ramscope-step5-applied.png` (application 1/1), `ramscope-step5-kill.png` (`Kill` seul) et `ramscope-step5-restored.png` (restauration).
+
 ### Avancement
 
 | Étape | État | Défauts traités | Vérification consignée |
 |---|---|---|---|
 | 0 — Socle vérifiable | terminée (2026-11-13) | D13, D14 | voir 7.1 |
 | 1 — Surface locale | terminée (2026-11-13) | D1, D12 | voir 7.2 |
-| 2 — Identité et irréversibilité | à faire | D2, D8 | — |
-| 3 — Vérité des chiffres | à faire | D3, D4, D5, D6, D15, D16 | — |
-| 4 — Règles et provenance | à faire | D7, D9, D10, D11 | — |
-| 5 — Interface de décision | à faire | D8 (volet interface) | — |
+| 2 — Identité et irréversibilité | terminée (2026-11-13) | D2, D8 | voir 7.4 |
+| 3 — Vérité des chiffres | terminée (2026-11-13) | D3, D4, D5, D6, D15, D16 | voir 7.5 |
+| 4 — Règles et provenance | terminée avec écart 602→601 documenté (2026-11-13) | D7, D9, D10, D11, D17 | voir 7.6 |
+| 5 — Interface de décision | terminée (2026-11-14) | D8 (volet interface), D18, D19 | voir 7.7 |
 | 6 — Recette et documentation | à faire | — | — |
 
 Une ligne « à faire » ne devient « terminée » qu'avec la commande, son code retour et le chemin de l'artefact concerné.

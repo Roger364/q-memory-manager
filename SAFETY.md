@@ -8,12 +8,15 @@ RamScope est un outil d'observation et de décision, pas un nettoyeur. Il ne sup
 - **Estimation** : un gain calculé à partir d'une mesure, ou l'attribution d'une part de mémoire partagée. Toujours approximatif.
 - **Recommandation** : un jugement sur l'utilité d'un élément. Ce n'est pas une mesure, et cela peut être faux pour ton usage.
 
+Un gain porte désormais sa nature : **mesuré** (delta de mémoire disponible avant/après un arrêt), **estimé** (calcul à partir d'une mesure) ou **non chiffrable** (aucune mesure disponible). « Non chiffrable » ne veut pas dire zéro.
+
 Un chiffre élevé n'est pas une preuve qu'un élément est inutile.
 
 ## Ce que RamScope refuse
 
 - Modifier ou arrêter un service de la liste `PROTECTED_SERVICES` (`src/rules.rs`).
 - Terminer un processus de la liste `PROTECTED_PROCESSES`, un PID inférieur ou égal à 8, ou RamScope lui-même.
+- Terminer un processus dont le chemin d'image ou l'heure de création ne correspond plus à ce qui a été analysé : le PID est rouvert et son identité revérifiée avant la terminaison.
 - Appliquer une action sans droits administrateur.
 
 Ces refus existent à deux niveaux : validation dans `src/plan.rs`, garde-fous dans `src/win.rs`. Ils restent actifs même si l'interface est contournée.
@@ -30,6 +33,8 @@ Ces refus existent à deux niveaux : validation dans `src/plan.rs`, garde-fous d
 
 Un point de restauration est écrit pour un lot qui contient au moins une action réussie et réversible. Il ne couvre pas les terminaisons de processus.
 
+L'interface ne présélectionne aucune action risquée : la sélection de masse ne coche que des changements de configuration réversibles à gain différé, jamais un processus. « Terminer » reste une action directe, hors de tout lot, avec une confirmation qui nomme le processus et rappelle la perte du travail non enregistré.
+
 ## Effets différés
 
 - Passer un service en manuel ne libère pas sa mémoire immédiatement : cela change ce qui se passe au prochain démarrage, et une dépendance peut le relancer à la demande.
@@ -40,9 +45,16 @@ Un point de restauration est écrit pour un lot qui contient au moins une action
 
 - La mémoire d'un service hébergé dans `svchost.exe` est partagée : RamScope affiche une part, pas une mesure isolée. Ces parts ne s'additionnent pas.
 - La mémoire « compressée » affichée est le working set du processus Memory Compression : approximation.
-- Les gains affichés sont des estimations.
-- Autres défauts connus, non corrigés à ce stade : la terminaison d'un processus ne vérifie pas encore son identité, un PID recyclé peut donc désigner un autre programme (D2) ; l'aide `--help` affirme à tort que toutes les modifications sont réversibles (D8), alors que la terminaison ne l'est pas. Voir `PLAN.md`.
-- Défauts connus, non corrigés à ce stade : un gain différé peut être présenté comme immédiat quand l'option « Libérer la RAM maintenant » est cochée (D3) ; une application tierce sans fenêtre au-dessus de 150 Mo peut être proposée à la fermeture sur ce seul critère (D4) ; des gains de 60 ou 40 Mo peuvent être estimés sans mesure (D5) ; l'addition des parts d'un même hôte reste approximative (D6). Voir `PLAN.md`.
+- Les gains de configuration sont des estimations ; un arrêt immédiat affiche en plus un delta de mémoire disponible mesuré après coup. Le reste n'est jamais présenté comme mesuré.
+- Un service hébergé dans un `svchost.exe` partagé ne compte que si **tous** les services de cet hôte sont dans le lot : le gain vaut alors la RAM de l'hôte, une seule fois. Sinon il est « non chiffrable ». Les parts `host_ram / shared` ne sont jamais additionnées.
+
+## Limites des règles
+
+- Depuis l'étape 4, le verrou et la gravité sont séparés : `Advice.locked` porte le refus, `Level` décrit la gravité. Un service verrouillé mais non vital (par exemple Windows Update) reste « À garder » ou « Système », avec un cadenas ; « Vital » est réservé aux composants dont l'arrêt casse Windows.
+- Les 601 règles portent une provenance de **famille** (table RamScope héritée, avec une référence Microsoft Learn, éditeurs, Gestionnaire des tâches ou Planificateur de tâches), pas une URL vérifiée règle par règle. Aucune règle n'est sans source, mais aucune n'a de date de revue individuelle : la valeur est `non datée`. Une justification peut donc être fausse pour ton usage ; vérifie l'éditeur et le chemin avant d'agir.
+- Les correspondances sont exactes : nom de service, nom d'exécutable, nom d'entrée ou composant/suffixe de chemin selon la table. Une entrée `php` ne déclenche plus la règle `hp`. Hors table, les anciennes heuristiques de nom (« update », « helper », « telemetry ») ne proposent plus d'action : le conseil reste `Unknown`.
+- La liste des services hébergés par un `svchost.exe` est reprise dans le conseil du processus ; la branche qui la rendait inatteignable a été supprimée.
+- Le total réel est de 601 règles, et non 602 : `eventsystem` et `eventsysevent` désignaient le même service COM+ Event System et ont été fusionnés. Voir `PLAN.md`, journal 7.6.
 
 ## Droits et surface locale
 

@@ -248,8 +248,10 @@ fn user_name() -> String {
 }
 
 fn os_name() -> String {
-    let mut v = OSVERSIONINFOW::default();
-    v.dwOSVersionInfoSize = std::mem::size_of::<OSVERSIONINFOW>() as DWORD;
+    let mut v = OSVERSIONINFOW {
+        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as DWORD,
+        ..Default::default()
+    };
     let ok = unsafe { RtlGetVersion(&mut v) } == 0;
     if !ok {
         return "Windows".into();
@@ -285,14 +287,30 @@ pub fn elevate() -> bool {
 // Mémoire
 // ---------------------------------------------------------------------------
 
-fn memory_info(procs: &[ProcessInfo]) -> MemoryInfo {
-    let mut m = MEMORYSTATUSEX::default();
-    m.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as DWORD;
+/// Mémoire physique disponible, sans construire de snapshot complet.
+pub fn memory_available() -> u64 {
+    let mut m = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as DWORD,
+        ..Default::default()
+    };
     unsafe {
         GlobalMemoryStatusEx(&mut m);
     }
-    let mut pi = PERFORMANCE_INFORMATION::default();
-    pi.cb = std::mem::size_of::<PERFORMANCE_INFORMATION>() as DWORD;
+    m.ullAvailPhys
+}
+
+fn memory_info(procs: &[ProcessInfo]) -> MemoryInfo {
+    let mut m = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as DWORD,
+        ..Default::default()
+    };
+    unsafe {
+        GlobalMemoryStatusEx(&mut m);
+    }
+    let mut pi = PERFORMANCE_INFORMATION {
+        cb: std::mem::size_of::<PERFORMANCE_INFORMATION>() as DWORD,
+        ..Default::default()
+    };
     let has_pi = unsafe { GetPerformanceInfo(&mut pi, pi.cb) } != 0;
     let page = if pi.PageSize > 0 {
         pi.PageSize as u64
@@ -355,8 +373,10 @@ fn raw_processes() -> Vec<RawProc> {
         if snap == INVALID_HANDLE_VALUE || snap == 0 {
             return out;
         }
-        let mut e = PROCESSENTRY32W::default();
-        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as DWORD;
+        let mut e = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as DWORD,
+            ..Default::default()
+        };
         if Process32FirstW(snap, &mut e) != 0 {
             loop {
                 out.push(RawProc {
@@ -385,9 +405,23 @@ fn process_path(h: HANDLE) -> String {
     }
 }
 
+fn process_created(h: HANDLE) -> u64 {
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    if unsafe { GetProcessTimes(h, &mut creation, &mut exit, &mut kernel, &mut user) } != 0 {
+        ((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64
+    } else {
+        0
+    }
+}
+
 fn process_mem(h: HANDLE) -> (u64, u64) {
-    let mut c = PROCESS_MEMORY_COUNTERS_EX::default();
-    c.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as DWORD;
+    let mut c = PROCESS_MEMORY_COUNTERS_EX {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as DWORD,
+        ..Default::default()
+    };
     if unsafe { K32GetProcessMemoryInfo(h, &mut c, c.cb) } != 0 {
         (c.WorkingSetSize as u64, c.PrivateUsage as u64)
     } else {
@@ -681,14 +715,16 @@ fn lnk_target(path: &Path) -> String {
     // ASCII
     let ascii: Vec<u8> = data
         .iter()
-        .map(|&b| if b >= 32 && b < 127 { b } else { 0 })
+        .map(|&b| if (32..127).contains(&b) { b } else { 0 })
         .collect();
     let s = String::from_utf8_lossy(&ascii);
     for m in s.split('\0') {
-        if m.len() > 5 && m.contains(":\\") && m.to_lowercase().ends_with(".exe") {
-            if m.len() > best.len() {
-                best = m.to_string();
-            }
+        if m.len() > 5
+            && m.contains(":\\")
+            && m.to_lowercase().ends_with(".exe")
+            && m.len() > best.len()
+        {
+            best = m.to_string();
         }
     }
     if best.is_empty() {
@@ -699,10 +735,12 @@ fn lnk_target(path: &Path) -> String {
         let wide = String::from_utf16_lossy(&u);
         for m in wide.split('\0') {
             let m = m.trim_matches(|c: char| c.is_control());
-            if m.len() > 5 && m.contains(":\\") && m.to_lowercase().ends_with(".exe") {
-                if m.len() > best.len() {
-                    best = m.to_string();
-                }
+            if m.len() > 5
+                && m.contains(":\\")
+                && m.to_lowercase().ends_with(".exe")
+                && m.len() > best.len()
+            {
+                best = m.to_string();
             }
         }
     }
@@ -1014,6 +1052,7 @@ pub fn collect() -> Snapshot {
     let mut procs: Vec<ProcessInfo> = Vec::new();
     for r in &raw {
         let mut path = String::new();
+        let mut created = 0u64;
         let mut ws = 0u64;
         let mut priv_ = 0u64;
         unsafe {
@@ -1029,6 +1068,7 @@ pub fn collect() -> Snapshot {
             };
             if h != 0 {
                 path = process_path(h);
+                created = process_created(h);
                 let m = process_mem(h);
                 ws = m.0;
                 priv_ = m.1;
@@ -1051,6 +1091,7 @@ pub fn collect() -> Snapshot {
             description: desc,
             company,
             path,
+            created_at: created,
             working_set: ws,
             private: priv_,
             threads: r.threads,
@@ -1143,12 +1184,20 @@ pub fn collect() -> Snapshot {
             p.has_window,
             &p.services,
         );
-        if let Some(Action::Kill { pid, .. }) = &mut a.action {
+        if let Some(Action::Kill {
+            pid,
+            image_path,
+            created_at,
+            ..
+        }) = &mut a.action
+        {
             *pid = p.pid;
+            *image_path = p.path.clone();
+            *created_at = p.created_at;
         }
         if rules::is_protected_process(&p.name) {
             a.action = None;
-            a.gain = 0;
+            a.gain = Gain::unavailable();
         }
         p.advice = a;
         p.category = if !p.services.is_empty() {
@@ -1193,7 +1242,7 @@ pub fn collect() -> Snapshot {
     let tasks = collect_tasks(&mut notes);
 
     let memory = memory_info(&procs);
-    procs.sort_by(|a, b| b.private.cmp(&a.private));
+    procs.sort_by_key(|p| std::cmp::Reverse(p.private));
     services.sort_by(|a, b| {
         a.advice
             .level
@@ -1221,17 +1270,36 @@ pub fn collect() -> Snapshot {
         tasks_enabled: tasks.iter().filter(|t| t.enabled).count(),
         actionable: 0,
     };
-    let mut planned: Vec<(Action, u64, u64)> = Vec::new();
-    for a in services
-        .iter()
-        .map(|s| &s.advice)
-        .chain(startup.iter().map(|s| &s.advice))
-    {
-        if let Some(action) = &a.action {
-            if a.level.preselected() {
-                counts.actionable += 1;
-                planned.push((action.clone(), a.gain, a.gain_next_boot));
-            }
+    let mut planned: Vec<plan::GainEntry> = Vec::new();
+    for s in services.iter().filter(|s| s.advice.level.preselected()) {
+        if let Some(action) = &s.advice.action {
+            counts.actionable += 1;
+            let host = if s.host_shared > 1 && s.pid > 0 {
+                Some(plan::HostGain {
+                    pid: s.pid,
+                    services: s.host_shared,
+                    host_ram: s.host_ram,
+                })
+            } else {
+                None
+            };
+            planned.push(plan::GainEntry {
+                action: action.clone(),
+                gain: s.advice.gain,
+                gain_next_boot: s.advice.gain_next_boot,
+                host,
+            });
+        }
+    }
+    for s in startup.iter().filter(|s| s.advice.level.preselected()) {
+        if let Some(action) = &s.advice.action {
+            counts.actionable += 1;
+            planned.push(plan::GainEntry {
+                action: action.clone(),
+                gain: s.advice.gain,
+                gain_next_boot: s.advice.gain_next_boot,
+                host: None,
+            });
         }
     }
     let (plan_gain, plan_boot) = plan::total_gains(&planned);
@@ -1434,7 +1502,7 @@ fn current_task_enabled(path: &str) -> Option<bool> {
     )
 }
 
-fn kill_process(pid: u32, name: &str) -> Result<(), String> {
+fn kill_process(pid: u32, name: &str, image_path: &str, created_at: u64) -> Result<(), String> {
     if rules::is_protected_process(name) || pid <= 8 {
         return Err("processus système protégé : refusé".into());
     }
@@ -1442,9 +1510,25 @@ fn kill_process(pid: u32, name: &str) -> Result<(), String> {
         return Err("RamScope ne peut pas se terminer lui-même".into());
     }
     unsafe {
-        let h = OpenProcess(PROCESS_TERMINATE, 0, pid);
+        let h = OpenProcess(
+            PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            pid,
+        );
         if h == 0 {
             return Err(err_msg(last_error()));
+        }
+        let path = process_path(h);
+        let cree = process_created(h);
+        if cree == 0 || path.is_empty() {
+            CloseHandle(h);
+            return Err("identité du processus illisible : action refusée".into());
+        }
+        if cree != created_at || !path.eq_ignore_ascii_case(image_path) {
+            CloseHandle(h);
+            return Err(
+                "l'identité du processus a changé depuis l'analyse : action refusée".into(),
+            );
         }
         let ok = TerminateProcess(h, 0);
         let e = last_error();
@@ -1478,14 +1562,17 @@ pub fn apply(actions: &[Action]) -> Vec<RollbackEntry> {
             Action::Service { name, .. } => current_service_start(name).map(|s| Action::Service {
                 name: name.clone(),
                 start: s,
+                from: None,
             }),
             Action::Startup { id, .. } => current_startup_state(id).map(|e| Action::Startup {
                 id: id.clone(),
                 enabled: e,
+                was_enabled: None,
             }),
             Action::Task { path, .. } => current_task_enabled(path).map(|e| Action::Task {
                 path: path.clone(),
                 enabled: e,
+                was_enabled: None,
             }),
             Action::StopService { name } => {
                 if service_is_running(name) {
@@ -1505,10 +1592,61 @@ pub fn apply(actions: &[Action]) -> Vec<RollbackEntry> {
         };
 
         let res = match a {
-            Action::Service { name, start } => apply_service(name, *start),
-            Action::Startup { id, enabled } => apply_startup(id, *enabled),
-            Action::Task { path, enabled } => run_schtasks(path, *enabled),
-            Action::Kill { pid, name } => kill_process(*pid, name),
+            Action::Service { name, start, from } => {
+                if let Some(attendu) = from {
+                    match current_service_start(name) {
+                        Some(courant) if courant != *attendu => Err(format!(
+                            "l'état du service « {name} » a changé depuis l'analyse (attendu {}, trouvé {})",
+                            attendu.label(),
+                            courant.label()
+                        )),
+                        None => Err(format!("service « {name} » introuvable")),
+                        _ => apply_service(name, *start),
+                    }
+                } else {
+                    apply_service(name, *start)
+                }
+            }
+            Action::Startup {
+                id,
+                enabled,
+                was_enabled,
+            } => {
+                if let Some(attendu) = was_enabled {
+                    match current_startup_state(id) {
+                        Some(courant) if courant != *attendu => {
+                            Err("l'état du démarrage a changé depuis l'analyse".to_string())
+                        }
+                        None => Err("entrée de démarrage introuvable".to_string()),
+                        _ => apply_startup(id, *enabled),
+                    }
+                } else {
+                    apply_startup(id, *enabled)
+                }
+            }
+            Action::Task {
+                path,
+                enabled,
+                was_enabled,
+            } => {
+                if let Some(attendu) = was_enabled {
+                    match current_task_enabled(path) {
+                        Some(courant) if courant != *attendu => {
+                            Err("l'état de la tâche a changé depuis l'analyse".to_string())
+                        }
+                        None => Err("tâche introuvable".to_string()),
+                        _ => run_schtasks(path, *enabled),
+                    }
+                } else {
+                    run_schtasks(path, *enabled)
+                }
+            }
+            Action::Kill {
+                pid,
+                name,
+                image_path,
+                created_at,
+            } => kill_process(*pid, name, image_path, *created_at),
             Action::StopService { name } => control_service(name, true),
             Action::StartService { name } => control_service(name, false),
         };

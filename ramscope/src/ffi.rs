@@ -1,6 +1,7 @@
 //! Déclarations Win32 brutes (FFI). Aucune dépendance externe : on lie
 //! directement kernel32 / advapi32 / psapi / user32 / version / shell32.
 #![allow(non_snake_case, non_camel_case_types, dead_code)]
+#![allow(clippy::upper_case_acronyms)] // Alias FFI : les noms Win32 restent tels quels.
 
 use std::ffi::c_void;
 
@@ -200,11 +201,25 @@ impl Default for OSVERSIONINFOW {
 
 pub type WNDENUMPROC = extern "system" fn(HWND, isize) -> BOOL;
 
+#[repr(C)]
+#[derive(Default, Clone, Copy)]
+pub struct FILETIME {
+    pub dwLowDateTime: DWORD,
+    pub dwHighDateTime: DWORD,
+}
+
 #[link(name = "kernel32")]
 extern "system" {
     pub fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> BOOL;
     pub fn GetTickCount64() -> u64;
     pub fn GetCurrentProcessId() -> DWORD;
+    pub fn GetProcessTimes(
+        hProcess: HANDLE,
+        lpCreationTime: *mut FILETIME,
+        lpExitTime: *mut FILETIME,
+        lpKernelTime: *mut FILETIME,
+        lpUserTime: *mut FILETIME,
+    ) -> BOOL;
     pub fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
     pub fn CloseHandle(hObject: HANDLE) -> BOOL;
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: u32) -> BOOL;

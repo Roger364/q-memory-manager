@@ -233,7 +233,31 @@ fn handle(app: &App, mut req: Request) {
                     "droits administrateur requis : clique sur « Passer en administrateur »",
                 );
             }
+            let verdicts = crate::plan::validate(&r.actions, std::process::id());
+            if let Some(refus) = verdicts.iter().find(|v| !v.allowed) {
+                return err(req, 403, &refus.message);
+            }
+            let stop_now = r
+                .actions
+                .iter()
+                .any(|a| matches!(a, Action::StopService { .. }));
+            let before = if stop_now {
+                Some(app.backend.available_memory())
+            } else {
+                None
+            };
             let entries = app.backend.apply(&r.actions);
+            // Attente bornée : la mémoire n'est pas rendue instantanément par
+            // Windows. On ne mesure que si un arrêt immédiat a été demandé.
+            let memory = before.map(|b| {
+                std::thread::sleep(Duration::from_millis(700));
+                let a = app.backend.available_memory();
+                MemoryDelta {
+                    available_before: b,
+                    available_after: a,
+                    gain: Gain::measured(a.saturating_sub(b), GainScope::System),
+                }
+            });
             let results: Vec<ActionResult> = entries
                 .iter()
                 .map(|e| ActionResult {
@@ -242,9 +266,18 @@ fn handle(app: &App, mut req: Request) {
                     message: e.message.clone(),
                 })
                 .collect();
-            let ok_entries: Vec<RollbackEntry> = entries.into_iter().filter(|e| e.ok).collect();
+            // Un point de restauration ne contient que ce qui peut être annulé :
+            // un Kill réussi n'a pas d'inverse et ne doit pas créer un point vide.
+            let ok_entries: Vec<RollbackEntry> = entries
+                .into_iter()
+                .filter(|e| e.ok && e.undo.is_some())
+                .collect();
             let label = r.label.unwrap_or_else(|| "Optimisation RamScope".into());
-            let point = util::save_rollback(&label, ok_entries);
+            let point = if ok_entries.is_empty() {
+                None
+            } else {
+                util::save_rollback(&label, ok_entries)
+            };
             app.invalidate();
             json(
                 req,
@@ -252,6 +285,7 @@ fn handle(app: &App, mut req: Request) {
                 &ApplyResponse {
                     results,
                     rollback_id: point.map(|p| p.id),
+                    memory,
                 },
             )
         }
@@ -295,6 +329,7 @@ fn handle(app: &App, mut req: Request) {
                 &ApplyResponse {
                     results,
                     rollback_id: None,
+                    memory: None,
                 },
             )
         }
@@ -515,6 +550,71 @@ mod tests {
         assert!(is_loopback("localhost"));
         assert!(!is_loopback("0.0.0.0"));
         assert!(!is_loopback("192.168.1.10"));
+    }
+
+    #[test]
+    fn l_interface_ne_convertit_pas_le_gain_differe_en_immediat() {
+        let js = include_str!("web/app.js");
+        assert!(
+            !js.contains("now += e.boot"),
+            "conversion différé → immédiat réintroduite"
+        );
+        assert!(
+            !js.contains("if (stopNow) boot = 0"),
+            "remise à zéro du différé réintroduite"
+        );
+        assert!(js.contains("Tout de suite :"));
+        assert!(js.contains("Au prochain démarrage :"));
+    }
+
+    #[test]
+    fn l_interface_interdit_les_formulations_qui_promettent_l_absence_de_risque() {
+        let js = include_str!("web/app.js").to_lowercase();
+        let html = include_str!("web/index.html").to_lowercase();
+        for interdit in ["sans risque", "aucun risque réel", "gain net"] {
+            assert!(
+                !js.contains(interdit),
+                "formulation bannie dans app.js : {interdit}"
+            );
+            assert!(
+                !html.contains(interdit),
+                "formulation bannie dans index.html : {interdit}"
+            );
+        }
+        assert!(js.contains("sélectionner les éléments réversibles à gain différé"));
+        assert!(js.contains("irréversible"));
+        assert!(js.contains("source détectée"));
+        assert!(js.contains("effet tout de suite"));
+        assert!(js.contains("effet au prochain démarrage"));
+        assert!(js.contains("réversibilité"));
+        assert!(js.contains("justification"));
+    }
+
+    #[test]
+    fn une_terminaison_ne_peut_pas_etre_selectionnee_dans_un_lot() {
+        let js = include_str!("web/app.js");
+        assert!(js.contains("function batchable"));
+        assert!(js.contains("item.advice.action.kind !== 'kill'"));
+        assert!(js.contains("ne peut pas être appliquée dans un lot"));
+    }
+
+    #[test]
+    fn le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite() {
+        let js = include_str!("web/app.js");
+        assert!(
+            js.contains("addEventListener('pointerdown'"),
+            "le fond doit mémoriser le début de l’appui"
+        );
+        assert!(
+            js.contains("if (maskPressed && e.target === $('#mask')) closeModal();"),
+            "un clic hérité du bouton d’ouverture ne doit pas fermer la modale"
+        );
+        assert!(
+            !js.contains(
+                "$('#mask').onclick = e => { if (e.target === $('#mask')) closeModal(); };"
+            ),
+            "ancienne fermeture sur clic retargeté réintroduite"
+        );
     }
 
     #[test]

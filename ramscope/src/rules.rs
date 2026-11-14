@@ -6,20 +6,118 @@
 //!  2. Chaque conseil est justifié en français, avec le gain estimé.
 //!  3. En cas de doute -> on ne conseille rien (niveau « non répertorié »).
 
-use crate::model::{Action, Advice, Level, StartType};
+use crate::model::{Action, Advice, Gain, GainScope, Level, StartType};
 
 pub fn lc(s: &str) -> String {
     crate::plan::normalize(s)
 }
 
 // ---------------------------------------------------------------------------
+// Schéma des règles : provenance et mode de correspondance
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatchMode {
+    /// Nom court de service, ou nom affiché exact.
+    ServiceName,
+    /// Nom d'exécutable exact (processus).
+    ExecutableName,
+    /// Nom d'entrée, nom d'exécutable ou composant de chemin exact (démarrage).
+    StartupExact,
+    /// Nom de tâche ou suffixe de chemin exact, à une frontière de composant.
+    TaskPath,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Rule {
+    pub key: &'static str,
+    pub level: Level,
+    /// Démarrage conseillé pour un service ; `None` sinon.
+    pub target: Option<StartType>,
+    pub mode: MatchMode,
+    /// Référence de la famille de règles, reprise pour chaque entrée.
+    #[allow(dead_code)]
+    pub source: &'static str,
+    #[allow(dead_code)]
+    pub reviewed: &'static str,
+    pub reason: &'static str,
+}
+
+// La provenance est portée par famille, pas par une URL vérifiée règle par
+// règle : les justifications viennent de la table RamScope héritée. La date de
+// revue reste inconnue tant qu'une revue de fond n'a pas été faite.
+const REVIEWED: &str = "non datée";
+const SOURCE_SERVICES: &str =
+    "Table RamScope héritée ; référence de famille : Microsoft Learn, services Windows 11";
+const SOURCE_PROCESSES: &str =
+    "Table RamScope héritée ; référence de famille : documentation Microsoft et des éditeurs";
+const SOURCE_STARTUP: &str =
+    "Table RamScope héritée ; référence de famille : Gestionnaire des tâches Windows 11";
+const SOURCE_TASKS: &str =
+    "Table RamScope héritée ; référence de famille : Planificateur de tâches Windows 11";
+
+macro_rules! service_rules {
+    ($source:expr, $(($key:literal, $level:expr, $target:expr, $reason:literal)),* $(,)?) => {
+        &[$(Rule {
+            key: $key,
+            level: $level,
+            target: $target,
+            mode: MatchMode::ServiceName,
+            source: $source,
+            reviewed: REVIEWED,
+            reason: $reason,
+        }),*]
+    };
+}
+
+macro_rules! process_rules {
+    ($source:expr, $(($key:literal, $level:expr, $reason:literal)),* $(,)?) => {
+        &[$(Rule {
+            key: $key,
+            level: $level,
+            target: None,
+            mode: MatchMode::ExecutableName,
+            source: $source,
+            reviewed: REVIEWED,
+            reason: $reason,
+        }),*]
+    };
+}
+
+macro_rules! startup_rules {
+    ($source:expr, $(($key:literal, $level:expr, $reason:literal)),* $(,)?) => {
+        &[$(Rule {
+            key: $key,
+            level: $level,
+            target: None,
+            mode: MatchMode::StartupExact,
+            source: $source,
+            reviewed: REVIEWED,
+            reason: $reason,
+        }),*]
+    };
+}
+
+macro_rules! task_rules {
+    ($source:expr, $(($key:literal, $level:expr, $reason:literal)),* $(,)?) => {
+        &[$(Rule {
+            key: $key,
+            level: $level,
+            target: None,
+            mode: MatchMode::TaskPath,
+            source: $source,
+            reviewed: REVIEWED,
+            reason: $reason,
+        }),*]
+    };
+}
+
+// ---------------------------------------------------------------------------
 // SERVICES
 // ---------------------------------------------------------------------------
 
-/// (nom court, niveau, démarrage conseillé, justification)
-type SRule = (&'static str, Level, Option<StartType>, &'static str);
-
-pub const SERVICES: &[SRule] = &[
+pub const SERVICES: &[Rule] = service_rules!(
+    SOURCE_SERVICES,
     // ---- Vitaux : verrouillés ----
     ("rpcss", Level::Critical, None, "Appels de procédure distante : le socle de Windows. Sans lui, plus rien ne démarre."),
     ("rpceptmapper", Level::Critical, None, "Table de correspondance des points de terminaison RPC. Vital."),
@@ -65,7 +163,6 @@ pub const SERVICES: &[SRule] = &[
     ("textinputmanagementservice", Level::Critical, None, "Saisie de texte, clavier tactile et presse-papiers."),
     ("appxsvc", Level::Critical, None, "Déploiement des applications Store. Nécessaire aux mises à jour des apps."),
     ("clipsvc", Level::Critical, None, "Licences des applications Store."),
-    ("eventsysevent", Level::Critical, None, "Système d'événements COM+."),
     ("eventsystem", Level::Critical, None, "Système d'événements COM+ : utilisé par de nombreux composants."),
     ("sens", Level::Critical, None, "Notification d'événements système (réseau, session)."),
     ("storsvc", Level::Critical, None, "Service de stockage : accès aux disques et applications."),
@@ -185,7 +282,7 @@ pub const SERVICES: &[SRule] = &[
     ("bdesvc", Level::Keep, None, "Chiffrement BitLocker. À garder si ton disque est chiffré."),
     ("tpmprovisioning", Level::Keep, None, "Provisionnement du TPM (sécurité matérielle)."),
     ("ngcsvc", Level::Keep, None, "Microsoft Passport : PIN et Windows Hello."),
-    ("ngcctorSvc", Level::Keep, None, "Conteneur de clés Windows Hello."),
+    ("ngcctorsvc", Level::Keep, None, "Conteneur de clés Windows Hello."),
     ("vaultsvc", Level::Keep, None, "Gestionnaire d'informations d'identification (mots de passe enregistrés)."),
     ("dsregsvc", Level::System, None, "Enregistrement de l'appareil (compte Microsoft / Azure AD)."),
     ("wlidsvc", Level::Keep, None, "Assistant Connexion Microsoft (compte Microsoft, Store, Office)."),
@@ -289,15 +386,14 @@ pub const SERVICES: &[SRule] = &[
     ("syncthing", Level::Optional, Some(StartType::Manual), "Synchronisation Syncthing. Manuel si tu ne synchronises pas en continu."),
     ("plexmediaserver", Level::Optional, Some(StartType::Manual), "Serveur Plex : gourmand. Manuel si tu ne streames pas tous les jours."),
     ("qbittorrent", Level::Optional, Some(StartType::Manual), "Client torrent en service. Manuel : lance-le quand tu en as besoin."),
-];
+);
 
 // ---------------------------------------------------------------------------
 // PROCESSUS
 // ---------------------------------------------------------------------------
 
-type PRule = (&'static str, Level, &'static str);
-
-pub const PROCESSES: &[PRule] = &[
+pub const PROCESSES: &[Rule] = process_rules!(
+    SOURCE_PROCESSES,
     // Vitaux
     ("system", Level::Critical, "Noyau Windows. Impossible et interdit à terminer."),
     ("registry", Level::Critical, "Processus du registre Windows. Vital."),
@@ -488,7 +584,7 @@ pub const PROCESSES: &[PRule] = &[
     ("teamviewer.exe", Level::Optional, "TeamViewer : à lancer quand tu en as besoin, sauf accès permanent voulu."),
     ("anydesk.exe", Level::Optional, "AnyDesk : à lancer à la demande (plus sûr)."),
     ("rustdesk.exe", Level::Optional, "RustDesk : à lancer à la demande."),
-    ("Everything.exe", Level::Keep, "Everything (recherche de fichiers) : très léger et bien plus rapide que Windows Search. À garder si tu l'utilises."),
+    ("everything.exe", Level::Keep, "Everything (recherche de fichiers) : très léger et bien plus rapide que Windows Search. À garder si tu l'utilises."),
     ("powertoys.exe", Level::Optional, "PowerToys. À garder si tu utilises ses outils."),
     ("autohotkey.exe", Level::Keep, "Script AutoHotkey : probablement utile à ton usage. À garder."),
     ("malwarebytes", Level::Keep, "Anti-malware : à garder si c'est ta protection choisie."),
@@ -506,15 +602,14 @@ pub const PROCESSES: &[PRule] = &[
     ("nortonsecurity.exe", Level::Optional, "Norton Security. Un seul antivirus à la fois."),
     ("avastui.exe", Level::Optional, "Avast. Un seul antivirus à la fois."),
     ("avgui.exe", Level::Optional, "AVG. Un seul antivirus à la fois."),
-];
+);
 
 // ---------------------------------------------------------------------------
 // DÉMARRAGE (motifs cherchés dans le nom ET la commande)
 // ---------------------------------------------------------------------------
 
-type StartRule = (&'static str, Level, &'static str);
-
-pub const STARTUP: &[StartRule] = &[
+pub const STARTUP: &[Rule] = startup_rules!(
+    SOURCE_STARTUP,
     ("onedrive", Level::Optional, "OneDrive au démarrage : synchronisation permanente. À couper si tu ne synchronises rien d'important (tu peux ouvrir OneDrive à la main)."),
     ("microsoftedgeautolaunch", Level::Trim, "Préchargement d'Edge au démarrage (« démarrage accéléré »). Pur confort marketing : Edge s'ouvre très bien sans ça."),
     ("msedge", Level::Trim, "Edge lancé automatiquement. Inutile : ouvre-le quand tu en as besoin."),
@@ -608,13 +703,14 @@ pub const STARTUP: &[StartRule] = &[
     ("wsl", Level::Optional, "WSL au démarrage. À lancer quand tu en as besoin."),
     ("plex", Level::Optional, "Plex Media Server au démarrage. À couper si tu ne streames pas tous les jours."),
     ("obs64", Level::Optional, "OBS au démarrage. À lancer au moment d'enregistrer."),
-];
+);
 
 // ---------------------------------------------------------------------------
 // TÂCHES PLANIFIÉES
 // ---------------------------------------------------------------------------
 
-pub const TASKS: &[StartRule] = &[
+pub const TASKS: &[Rule] = task_rules!(
+    SOURCE_TASKS,
     ("microsoft compatibility appraiser", Level::Trim, "Évalue la compatibilité du PC pour les mises à jour et alimente la télémétrie. Peut occuper le CPU/disque plusieurs minutes. Sans impact si désactivée."),
     ("programdataupdater", Level::Trim, "Collecte de données de compatibilité des programmes (télémétrie). Superflu."),
     ("startupapptask", Level::Optional, "Analyse les applications de démarrage pour le Gestionnaire des tâches. Désactivable sans risque."),
@@ -627,14 +723,14 @@ pub const TASKS: &[StartRule] = &[
     ("microsoft-windows-diskdiagnosticdatacollector", Level::Trim, "Collecte de données de diagnostic disque (télémétrie). Superflu."),
     ("dmclient", Level::Trim, "Feedback Hub : collecte de télémétrie. Superflu."),
     ("queuereporting", Level::Trim, "Envoi des rapports d'erreurs Windows. Superflu (les rapports restent locaux)."),
-    ("mapsToasttask", Level::Optional, "Notifications de l'app Cartes. Inutile si tu n'utilises pas Cartes."),
+    ("mapstoasttask", Level::Optional, "Notifications de l'app Cartes. Inutile si tu n'utilises pas Cartes."),
     ("mapsupdatetask", Level::Optional, "Mise à jour des cartes hors ligne. Inutile si tu n'utilises pas Cartes."),
     ("retail demo", Level::Junk, "Mode démonstration magasin. Strictement inutile."),
     ("cleanupofflinecontent", Level::Junk, "Nettoyage du contenu de démonstration magasin. Inutile."),
     ("familysafetymonitor", Level::Optional, "Contrôle parental / Sécurité familiale. Inutile sans compte enfant."),
     ("familysafetyuploadtask", Level::Optional, "Envoi des rapports de Sécurité familiale. Inutile sans compte enfant."),
     ("work folders", Level::Optional, "Synchronisation des dossiers de travail (entreprise). Inutile chez soi."),
-    ("officeTelemetryAgent", Level::Trim, "Télémétrie Office. Superflu, aucun impact sur Word/Excel."),
+    ("officetelemetryagent", Level::Trim, "Télémétrie Office. Superflu, aucun impact sur Word/Excel."),
     ("officetelemetryagentlogon", Level::Trim, "Télémétrie Office à l'ouverture de session. Superflu."),
     ("officetelemetryagentfallback", Level::Trim, "Télémétrie Office (tâche de repli). Superflu."),
     ("office clicktorun service monitor", Level::Keep, "Surveillance du service Office Click-to-Run : nécessaire aux mises à jour d'Office. À garder."),
@@ -665,7 +761,7 @@ pub const TASKS: &[StartRule] = &[
     ("time synchronization", Level::Keep, "Synchronisation de l'heure. À garder."),
     ("wsqmcons", Level::Trim, "Collecte de données d'utilisation (SQM/CEIP). Superflu."),
     ("sqm", Level::Trim, "Collecte de données d'utilisation (SQM). Superflu."),
-];
+);
 
 // ---------------------------------------------------------------------------
 // Protections (verrous serveur)
@@ -784,6 +880,40 @@ pub fn is_protected_process(name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Correspondance exacte
+// ---------------------------------------------------------------------------
+
+impl Rule {
+    /// Démarrage : nom d'entrée, nom d'exécutable ou composant de chemin exact.
+    fn matches_startup(&self, name: &str, command: &str) -> bool {
+        if self.mode != MatchMode::StartupExact {
+            return false;
+        }
+        if lc(name) == self.key {
+            return true;
+        }
+        let exe = lc(&crate::util::extract_exe(command));
+        let stem = exe.strip_suffix(".exe").unwrap_or(&exe);
+        if exe == self.key || stem == self.key {
+            return true;
+        }
+        lc(command).split(['\\', '/']).any(|part| part == self.key)
+    }
+
+    /// Tâche : nom de tâche ou suffixe de chemin exact, à une frontière de
+    /// composant. Aucune sous-chaîne libre sur la ligne de commande.
+    fn matches_task(&self, path: &str) -> bool {
+        if self.mode != MatchMode::TaskPath {
+            return false;
+        }
+        let p = lc(path);
+        p == self.key
+            || p.split(['\\', '/']).any(|part| part == self.key)
+            || p.ends_with(&format!("\\{}", self.key))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Moteur de conseil
 // ---------------------------------------------------------------------------
 
@@ -800,72 +930,49 @@ pub fn service_advice(
     let d = lc(display);
     let p = lc(path);
 
-    if is_protected_service(name) {
-        let reason = SERVICES
-            .iter()
-            .find(|(k, ..)| *k == n)
-            .map(|(_, _, _, r)| *r)
-            .unwrap_or("Service essentiel au fonctionnement de Windows. Verrouillé par RamScope.");
-        return Advice::new(Level::Critical, reason);
-    }
+    // 1. Règle exacte sur le nom court, puis sur le nom affiché exact.
+    let hit = SERVICES
+        .iter()
+        .find(|r| r.key == n)
+        .or_else(|| SERVICES.iter().find(|r| r.key == d));
 
-    // 1. Règle exacte sur le nom court, puis sur le nom affiché.
-    let hit = SERVICES.iter().find(|(k, ..)| *k == n).or_else(|| {
-        SERVICES
-            .iter()
-            .find(|(k, ..)| crate::plan::key_matches(*k, &[d.as_str()]))
-    });
-
-    if let Some((_, level, target, reason)) = hit {
-        let mut a = Advice::new(*level, reason);
-        if let Some(t) = target {
-            let already = start == *t || (*t == StartType::Manual && start == StartType::Disabled);
-            if !already && matches!(level, Level::Junk | Level::Trim | Level::Optional) {
+    if let Some(rule) = hit {
+        let mut a = Advice::new(rule.level, rule.reason);
+        if is_protected_service(name) {
+            a.locked = true;
+            return a;
+        }
+        if let Some(t) = rule.target {
+            let already = start == t || (t == StartType::Manual && start == StartType::Disabled);
+            if !already && matches!(rule.level, Level::Junk | Level::Trim | Level::Optional) {
                 a = a.with_action(Action::Service {
                     name: name.to_string(),
-                    start: *t,
+                    start: t,
+                    from: Some(start),
                 });
                 // Changer le type de démarrage ne libère la RAM qu'après
                 // arrêt du service ou redémarrage : gain au prochain boot.
-                a.gain_next_boot = ram;
+                a.gain_next_boot = Gain::estimated(ram, GainScope::HostPart);
                 let _ = running;
-            } else if already && matches!(level, Level::Junk | Level::Trim) {
-                a.reason = format!("{reason} — déjà bien configuré ✔");
+            } else if already && matches!(rule.level, Level::Junk | Level::Trim) {
+                a.reason = format!("{} — déjà bien configuré ✔", rule.reason);
             }
         }
         return a;
     }
 
-    // 2. Heuristiques génériques.
-    let looks_like_updater = [
-        "update",
-        "updater",
-        "maintenance",
-        "telemetry",
-        "crash",
-        "report",
-        "assistant",
-        "survey",
-        "improvement",
-        "analytics",
-    ]
-    .iter()
-    .any(|w| n.contains(w) || d.contains(w));
-    let is_ms = p.contains("\\windows\\") || p.contains("svchost.exe");
-
-    if !is_ms && looks_like_updater && start == StartType::Auto {
+    if is_protected_service(name) {
         let mut a = Advice::new(
-            Level::Trim,
-            "Service tiers en démarrage automatique qui ressemble à un agent de mise à jour ou de télémétrie. Le passer en manuel libère de la RAM sans casser le logiciel : il sera relancé à la demande.",
+            Level::Critical,
+            "Service essentiel au fonctionnement de Windows. Verrouillé par RamScope.",
         );
-        a = a.with_action(Action::Service {
-            name: name.to_string(),
-            start: StartType::Manual,
-        });
-        a.gain_next_boot = ram;
-        let _ = running;
+        a.locked = true;
         return a;
     }
+
+    // 2. Aucune règle nommée : aucun conseil d'action. Une heuristique de nom
+    // ne porte pas de source et ne doit donc pas proposer de modification.
+    let is_ms = p.contains("\\windows\\") || p.contains("svchost.exe");
 
     if is_ms {
         return Advice::new(
@@ -901,38 +1008,38 @@ pub fn process_advice(
     let p = lc(path);
     let c = lc(company);
 
-    if is_protected_process(name) {
-        let reason = PROCESSES
-            .iter()
-            .find(|(k, ..)| *k == n)
-            .map(|(_, _, r)| *r)
-            .unwrap_or("Processus système Windows : ne pas terminer.");
-        return Advice::new(Level::Critical, reason);
-    }
-
-    if let Some((_, level, reason)) = PROCESSES.iter().find(|(k, ..)| *k == n) {
-        let mut a = Advice::new(*level, reason);
-        if matches!(level, Level::Trim | Level::Optional) {
+    if let Some(rule) = PROCESSES.iter().find(|r| r.key == n) {
+        let mut a = Advice::new(rule.level, rule.reason);
+        if n == "svchost.exe" && !services.is_empty() {
+            a.reason = format!(
+                "{} Services hébergés : {}.",
+                rule.reason,
+                services.join(", ")
+            );
+        }
+        if is_protected_process(name) {
+            a.locked = true;
+            return a;
+        }
+        if matches!(rule.level, Level::Trim | Level::Optional) {
             a = a.with_action(Action::Kill {
                 pid: 0,
                 name: name.to_string(),
+                image_path: path.to_string(),
+                created_at: 0,
             });
-            a.gain = private;
+            a.gain = Gain::estimated(private, GainScope::Private);
         }
         return a;
     }
 
-    // svchost inconnu : on renvoie vers l'onglet Services.
-    if n == "svchost.exe" {
-        let list = if services.is_empty() {
-            "aucun service identifié".to_string()
-        } else {
-            services.join(", ")
-        };
-        return Advice::new(
-            Level::System,
-            &format!("Hôte de services Windows ({list}). La RAM affichée est partagée entre ces services : voir l'onglet Services pour agir."),
+    if is_protected_process(name) {
+        let mut a = Advice::new(
+            Level::Critical,
+            "Processus système Windows : ne pas terminer.",
         );
+        a.locked = true;
+        return a;
     }
 
     let is_ms = c.contains("microsoft") || p.contains("\\windows\\");
@@ -941,33 +1048,6 @@ pub fn process_advice(
             Level::System,
             "Composant Windows non répertorié : à laisser tel quel par prudence.",
         );
-    }
-
-    // Application tierce sans fenêtre et gourmande -> candidat à la fermeture.
-    if !has_window && private > 150 * 1024 * 1024 {
-        let mut a = Advice::new(
-            Level::Optional,
-            "Application tierce qui tourne en arrière-plan sans aucune fenêtre visible et occupe beaucoup de RAM. Si tu ne t'en sers pas en ce moment, tu peux la fermer (et retirer son démarrage automatique).",
-        );
-        a = a.with_action(Action::Kill {
-            pid: 0,
-            name: name.to_string(),
-        });
-        a.gain = private;
-        return a;
-    }
-
-    if !has_window && (p.contains("\\appdata\\") || n.contains("update") || n.contains("helper")) {
-        let mut a = Advice::new(
-            Level::Trim,
-            "Petit utilitaire d'arrière-plan (mise à jour, assistant, notification) installé dans le profil utilisateur. Rarement indispensable en permanence.",
-        );
-        a = a.with_action(Action::Kill {
-            pid: 0,
-            name: name.to_string(),
-        });
-        a.gain = private;
-        return a;
     }
 
     if has_window {
@@ -986,23 +1066,18 @@ pub fn process_advice(
 
 /// Conseil pour une entrée de démarrage.
 pub fn startup_advice(name: &str, command: &str, enabled: bool, ram: u64) -> Advice {
-    let n = lc(name);
-    let c = lc(command);
-
-    if let Some((_, level, reason)) = STARTUP
-        .iter()
-        .find(|(k, ..)| crate::plan::key_matches(*k, &[n.as_str(), c.as_str()]))
-    {
-        let mut a = Advice::new(*level, reason);
-        if enabled && matches!(level, Level::Junk | Level::Trim | Level::Optional) {
+    if let Some(rule) = STARTUP.iter().find(|r| r.matches_startup(name, command)) {
+        let mut a = Advice::new(rule.level, rule.reason);
+        if enabled && matches!(rule.level, Level::Junk | Level::Trim | Level::Optional) {
             a = a.with_action(Action::Startup {
                 id: String::new(),
                 enabled: false,
+                was_enabled: Some(enabled),
             });
             // Désactiver le démarrage n'arrête pas le programme déjà lancé.
-            a.gain_next_boot = if ram > 0 { ram } else { 60 * 1024 * 1024 };
-        } else if !enabled && matches!(level, Level::Junk | Level::Trim) {
-            a.reason = format!("{reason} — déjà désactivé ✔");
+            a.gain_next_boot = Gain::estimated(ram, GainScope::Private);
+        } else if !enabled && matches!(rule.level, Level::Junk | Level::Trim) {
+            a.reason = format!("{} — déjà désactivé ✔", rule.reason);
         }
         return a;
     }
@@ -1011,57 +1086,26 @@ pub fn startup_advice(name: &str, command: &str, enabled: bool, ram: u64) -> Adv
         return Advice::new(Level::Unknown, "Entrée déjà désactivée : rien à faire.");
     }
 
-    let looks_optional = [
-        "update",
-        "helper",
-        "tray",
-        "launcher",
-        "sync",
-        "assistant",
-        "notification",
-        "updater",
-        "reminder",
-        "monitor",
-    ]
-    .iter()
-    .any(|w| n.contains(w) || c.contains(w));
-
-    if looks_optional {
-        let mut a = Advice::new(
-            Level::Optional,
-            "Programme de démarrage qui ressemble à un utilitaire d'arrière-plan (mise à jour, notification, synchronisation). Le désactiver n'empêche pas d'utiliser le logiciel : il faudra juste le lancer à la main.",
-        );
-        a = a.with_action(Action::Startup {
-            id: String::new(),
-            enabled: false,
-        });
-        a.gain_next_boot = if ram > 0 { ram } else { 40 * 1024 * 1024 };
-        return a;
-    }
-
     Advice::new(
         Level::Unknown,
-        "Entrée de démarrage non répertoriée. Règle simple : si tu ne sais pas à quoi elle sert, désactive-la (c'est réversible) et vois si quelque chose te manque. Ne supprime jamais l'entrée, désactive-la.",
+        "Entrée de démarrage non répertoriée. Aucune règle nommée ne s'applique : RamScope ne propose pas de la désactiver. Vérifie son éditeur et son chemin ; si tu ne sais pas à quoi elle sert, laisse-la et documente-la plutôt que d'agir au hasard.",
     )
 }
 
 /// Conseil pour une tâche planifiée.
-pub fn task_advice(path: &str, command: &str, enabled: bool, triggers: &[String]) -> Advice {
+pub fn task_advice(path: &str, _command: &str, enabled: bool, triggers: &[String]) -> Advice {
     let p = lc(path);
-    let c = lc(command);
 
-    if let Some((_, level, reason)) = TASKS
-        .iter()
-        .find(|(k, ..)| crate::plan::key_matches(*k, &[p.as_str(), c.as_str()]))
-    {
-        let mut a = Advice::new(*level, reason);
-        if enabled && matches!(level, Level::Junk | Level::Trim | Level::Optional) {
+    if let Some(rule) = TASKS.iter().find(|r| r.matches_task(path)) {
+        let mut a = Advice::new(rule.level, rule.reason);
+        if enabled && matches!(rule.level, Level::Junk | Level::Trim | Level::Optional) {
             a = a.with_action(Action::Task {
                 path: path.to_string(),
                 enabled: false,
+                was_enabled: Some(enabled),
             });
-        } else if !enabled && matches!(level, Level::Junk | Level::Trim) {
-            a.reason = format!("{reason} — déjà désactivée ✔");
+        } else if !enabled && matches!(rule.level, Level::Junk | Level::Trim) {
+            a.reason = format!("{} — déjà désactivée ✔", rule.reason);
         }
         return a;
     }
@@ -1069,19 +1113,6 @@ pub fn task_advice(path: &str, command: &str, enabled: bool, triggers: &[String]
     let _ = triggers;
     if !enabled {
         return Advice::new(Level::Unknown, "Tâche déjà désactivée : rien à faire.");
-    }
-
-    let third_party = !p.starts_with("\\microsoft\\windows\\");
-    if third_party && (c.contains("update") || c.contains("telemetry") || c.contains("report")) {
-        let mut a = Advice::new(
-            Level::Optional,
-            "Tâche d'un logiciel tiers (mise à jour ou rapport). Généralement désactivable : le logiciel vérifiera ses mises à jour à son lancement.",
-        );
-        a = a.with_action(Action::Task {
-            path: path.to_string(),
-            enabled: false,
-        });
-        return a;
     }
 
     if p.starts_with("\\microsoft\\windows\\") {
@@ -1093,13 +1124,14 @@ pub fn task_advice(path: &str, command: &str, enabled: bool, triggers: &[String]
 
     Advice::new(
         Level::Unknown,
-        "Tâche non répertoriée. Regarde le programme exécuté et le déclencheur : si c'est un logiciel que tu utilises rarement, tu peux la désactiver (réversible).",
+        "Tâche non répertoriée. Aucune règle nommée ne s'applique : RamScope ne propose pas de la désactiver. Vérifie le programme exécuté et le déclencheur avant de décider toi-même.",
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::GainNature;
 
     #[test]
     fn protege_le_vital() {
@@ -1127,10 +1159,13 @@ mod tests {
             a.action,
             Some(Action::Service {
                 name: "DiagTrack".into(),
-                start: StartType::Disabled
+                start: StartType::Disabled,
+                from: Some(StartType::Auto),
             })
         );
-        assert_eq!(a.gain_next_boot, 20 * 1024 * 1024);
+        assert_eq!(a.gain_next_boot.bytes, 20 * 1024 * 1024);
+        assert_eq!(a.gain_next_boot.scope, GainScope::HostPart);
+        assert!(!a.gain_next_boot.additive);
     }
 
     #[test]
@@ -1160,6 +1195,30 @@ mod tests {
     }
 
     #[test]
+    fn pas_de_kill_fonde_sur_un_seuil_de_ram() {
+        let a = process_advice(
+            "inconnu.exe",
+            r"C:\Users\x\AppData\Local\inconnu.exe",
+            "",
+            "",
+            500 * 1024 * 1024,
+            false,
+            &[],
+        );
+        assert_eq!(a.level, Level::Unknown);
+        assert!(a.action.is_none());
+        assert_eq!(a.gain.bytes, 0);
+    }
+
+    #[test]
+    fn un_gain_sans_mesure_reste_indisponible() {
+        let a = startup_advice("Spotify", r"C:\Spotify\Spotify.exe", true, 0);
+        assert!(a.action.is_some());
+        assert_eq!(a.gain_next_boot.bytes, 0);
+        assert_eq!(a.gain_next_boot.nature, GainNature::Unavailable);
+    }
+
+    #[test]
     fn tache_telemetrie() {
         let a = task_advice(
             "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser",
@@ -1168,5 +1227,139 @@ mod tests {
             &[],
         );
         assert_eq!(a.level, Level::Trim);
+    }
+
+    #[test]
+    fn audit_des_regles() {
+        assert_eq!(SERVICES.len(), 261);
+        assert_eq!(PROCESSES.len(), 197);
+        assert_eq!(STARTUP.len(), 93);
+        assert_eq!(TASKS.len(), 50);
+
+        let tables: [(&str, &[Rule], MatchMode); 4] = [
+            ("SERVICES", SERVICES, MatchMode::ServiceName),
+            ("PROCESSES", PROCESSES, MatchMode::ExecutableName),
+            ("STARTUP", STARTUP, MatchMode::StartupExact),
+            ("TASKS", TASKS, MatchMode::TaskPath),
+        ];
+        let mut total = 0;
+        for (nom, table, mode) in tables {
+            let mut vues: Vec<&str> = Vec::new();
+            for r in table {
+                assert_eq!(r.mode, mode, "{nom} : mode incohérent pour {}", r.key);
+                assert!(r.key.len() >= 2, "{nom} : clé trop courte {:?}", r.key);
+                assert_eq!(r.key, r.key.to_lowercase(), "{nom} : clé non minuscule");
+                assert!(!r.reason.trim().is_empty(), "{nom} : action vide");
+                assert!(!r.source.trim().is_empty(), "{nom} : source absente");
+                assert_eq!(r.reviewed, REVIEWED, "{nom} : revue absente");
+                assert!(!vues.contains(&r.key), "{nom} : doublon {}", r.key);
+                vues.push(r.key);
+                if matches!(mode, MatchMode::StartupExact | MatchMode::TaskPath) {
+                    assert_ne!(r.level, Level::Critical, "{nom} : verrou sur une entrée");
+                }
+            }
+            total += table.len();
+        }
+        assert_eq!(total, 601);
+
+        for p in PROTECTED_SERVICES {
+            assert!(
+                SERVICES.iter().any(|r| r.key == *p),
+                "service protégé sans règle : {p}"
+            );
+        }
+        for r in SERVICES {
+            if r.level == Level::Critical {
+                assert!(
+                    is_protected_service(r.key),
+                    "Critical non verrouillé : {}",
+                    r.key
+                );
+            }
+        }
+        for r in PROCESSES {
+            if r.level == Level::Critical {
+                assert!(
+                    is_protected_process(r.key),
+                    "Critical non verrouillé : {}",
+                    r.key
+                );
+            }
+        }
+        assert!(SERVICES.iter().any(|r| r.key == "ngcctorsvc"));
+    }
+
+    #[test]
+    fn un_service_verrouille_garde_son_niveau_de_table() {
+        let a = service_advice(
+            "wuauserv",
+            "Windows Update",
+            "svchost.exe",
+            StartType::Manual,
+            false,
+            0,
+        );
+        assert_eq!(a.level, Level::Keep);
+        assert!(a.locked);
+        assert!(a.action.is_none());
+
+        let b = service_advice("RpcSs", "RPC", "svchost.exe", StartType::Auto, true, 10);
+        assert_eq!(b.level, Level::Critical);
+        assert!(b.locked);
+    }
+
+    #[test]
+    fn svchost_garde_la_liste_des_services_heberges() {
+        let a = process_advice(
+            "svchost.exe",
+            r"C:\Windows\System32\svchost.exe",
+            "",
+            "Microsoft",
+            100 * 1024 * 1024,
+            false,
+            &["Dnscache".to_string(), "Dhcp".to_string()],
+        );
+        assert_eq!(a.level, Level::System);
+        assert!(a.locked);
+        assert!(a.reason.contains("Dnscache"));
+        assert!(a.action.is_none());
+    }
+
+    #[test]
+    fn php_ne_correspond_pas_a_hp() {
+        let a = startup_advice("PHP", r"C:\php\php.exe --version", true, 10);
+        assert_eq!(a.level, Level::Unknown);
+        assert!(a.action.is_none());
+
+        let b = startup_advice("HP", r"C:\Program Files\HP\hp.exe", true, 10);
+        assert_eq!(b.level, Level::Optional);
+        assert!(b.action.is_some());
+    }
+
+    #[test]
+    fn aucune_heuristique_sans_source_ne_propose_d_action() {
+        let s = service_advice(
+            "MonService",
+            "Mon service de mise à jour",
+            r"C:\Tools\mon-service.exe",
+            StartType::Auto,
+            true,
+            10,
+        );
+        assert_eq!(s.level, Level::Unknown);
+        assert!(s.action.is_none());
+
+        let u = startup_advice(
+            "Mon utilitaire",
+            r"C:\Tools\mon-update-helper.exe",
+            true,
+            10,
+        );
+        assert_eq!(u.level, Level::Unknown);
+        assert!(u.action.is_none());
+
+        let t = task_advice("\\Tools\\UpdateTask", "", true, &[]);
+        assert_eq!(t.level, Level::Unknown);
+        assert!(t.action.is_none());
     }
 }

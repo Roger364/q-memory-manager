@@ -38,22 +38,22 @@
 
   <footer class="foot">
     RamScope ne supprime rien : il désactive des démarrages automatiques et passe des services en manuel, en gardant toujours de quoi revenir en arrière.
-    Les gains affichés sont des estimations — la RAM d'un <span class="mono">svchost.exe</span> est partagée entre plusieurs services, et un service en manuel peut redémarrer à la demande.
+    Chaque gain affiche sa nature — mesuré, estimé ou non chiffrable — et les gains immédiats sont séparés des gains au prochain démarrage. La RAM d'un <span class="mono">svchost.exe</span> est partagée entre plusieurs services, et un service en manuel peut redémarrer à la demande.
     Les éléments vitaux sont verrouillés côté moteur, pas seulement à l'écran.
   </footer>
 </div>
 
 <div class="actionbar" id="actionbar">
   <span class="cnt" id="selCount">0 sélectionné</span>
-  <span class="g" id="selGain"></span>
-  <label class="switch" id="stopNowWrap" title="Arrêter aussi les services concernés pour libérer la RAM tout de suite">
-    <input type="checkbox" id="stopNow"> Libérer la RAM maintenant
+  <span class="g" id="selGain" aria-live="polite"></span>
+  <label class="switch" id="stopNowWrap" title="Arrêter aussi les services concernés maintenant ; la mémoire réellement rendue est mesurée après l’application">
+    <input type="checkbox" id="stopNow"> Arrêter aussi les services maintenant
   </label>
   <button class="btn ghost sm" id="btnClearSel">Tout décocher</button>
   <button class="btn primary" id="btnApply">Appliquer…</button>
 </div>
 
-<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+<div class="mask" id="mask"><div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="RamScope"></div></div>
 <div class="toasts" id="toasts"></div>
 
 <script>window.RAMSCOPE_TOKEN="__TOKEN__";window.RAMSCOPE_URL="__URL__";</script>

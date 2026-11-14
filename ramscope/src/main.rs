@@ -33,8 +33,9 @@ Usage : ramscope.exe [options]
   --demo          données de démonstration (aucun accès à la machine)
   --help          cette aide
 
-L'interface s'ouvre dans une fenêtre d'application. Toutes les modifications
-sont réversibles : chaque lot appliqué crée un point de restauration.",
+L'interface s'ouvre dans une fenêtre d'application. Les changements de
+configuration sont réversibles (point de restauration) ; la terminaison d'un
+processus ne l'est pas et n'est jamais annulée par ce point.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -64,10 +65,8 @@ fn main() {
     // Élévation UAC au lancement (sauf demande explicite de lecture seule).
     #[cfg(windows)]
     {
-        if !demo && !has("--no-admin") && !has("--elevated") && !win::is_admin() {
-            if win::elevate() {
-                return; // l'instance élevée prend le relais
-            }
+        if !demo && !has("--no-admin") && !has("--elevated") && !win::is_admin() && win::elevate() {
+            return; // l'instance élevée prend le relais
         }
     }
 

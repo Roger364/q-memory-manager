@@ -9,6 +9,14 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+fn gain_text(g: &Gain) -> String {
+    if g.bytes == 0 || g.nature == GainNature::Unavailable {
+        "non chiffrable".to_string()
+    } else {
+        format!("{} ({})", fmt_bytes(g.bytes), g.nature.label())
+    }
+}
+
 fn badge(a: &Advice) -> String {
     let cls = match a.level {
         Level::Critical => "crit",
@@ -64,15 +72,15 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
 <div class="card"><div class="k">RAM totale</div><div class="v">{}</div></div>
 <div class="card"><div class="k">Utilisée</div><div class="v">{} ({}%)</div></div>
 <div class="card"><div class="k">Disponible</div><div class="v">{}</div></div>
-<div class="card"><div class="k">Gain immédiat estimé</div><div class="v">{}</div></div>
-<div class="card"><div class="k">Gain au prochain boot</div><div class="v">{}</div></div>
+<div class="card"><div class="k">Gain immédiat</div><div class="v">{}</div></div>
+<div class="card"><div class="k">Gain au prochain démarrage</div><div class="v">{}</div></div>
 </div>"#,
         fmt_bytes(s.memory.total),
         fmt_bytes(s.memory.used),
         s.memory.load,
         fmt_bytes(s.memory.available),
-        fmt_bytes(s.plan_gain),
-        fmt_bytes(s.plan_gain_next_boot)
+        gain_text(&s.plan_gain),
+        gain_text(&s.plan_gain_next_boot)
     ));
 
     for n in &s.meta.notes {
@@ -80,16 +88,16 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
     }
 
     // --- plan ---
-    h.push_str("<h2>Plan d'optimisation recommandé</h2><table><tr><th>Élément</th><th>Verdict</th><th>Action conseillée</th><th class=\"num\">Gain</th><th>Pourquoi</th></tr>");
+    h.push_str("<h2>Plan d'optimisation recommandé</h2><table><tr><th>Élément</th><th>Verdict</th><th>Action conseillée</th><th class=\"num\">Tout de suite</th><th class=\"num\">Au prochain démarrage</th><th>Pourquoi</th></tr>");
     let mut rows = 0;
     for svc in &s.services {
         if let Some(a) = &svc.advice.action {
             if svc.advice.level.preselected() {
                 rows += 1;
                 h.push_str(&format!(
-                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td></tr>",
+                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td></tr>",
                     esc(&svc.display), esc(&svc.name), badge(&svc.advice), esc(&a.describe()),
-                    fmt_bytes(svc.advice.gain + svc.advice.gain_next_boot), esc(&svc.advice.reason)
+                    gain_text(&svc.advice.gain), gain_text(&svc.advice.gain_next_boot), esc(&svc.advice.reason)
                 ));
             }
         }
@@ -99,9 +107,9 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
             if st.advice.level.preselected() {
                 rows += 1;
                 h.push_str(&format!(
-                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td></tr>",
+                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td></tr>",
                     esc(&st.name), esc(&st.command), badge(&st.advice), esc(&a.describe()),
-                    fmt_bytes(st.advice.gain + st.advice.gain_next_boot), esc(&st.advice.reason)
+                    gain_text(&st.advice.gain), gain_text(&st.advice.gain_next_boot), esc(&st.advice.reason)
                 ));
             }
         }
@@ -111,14 +119,14 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
             if t.advice.level.preselected() {
                 rows += 1;
                 h.push_str(&format!(
-                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">—</td><td class=\"why\">{}</td></tr>",
+                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">—</td><td class=\"num\">—</td><td class=\"why\">{}</td></tr>",
                     esc(&t.name), esc(&t.path), badge(&t.advice), esc(&a.describe()), esc(&t.advice.reason)
                 ));
             }
         }
     }
     if rows == 0 {
-        h.push_str("<tr><td colspan=\"5\">Rien à optimiser sans risque : configuration déjà saine.</td></tr>");
+        h.push_str("<tr><td colspan=\"6\">Rien à optimiser : configuration déjà saine.</td></tr>");
     }
     h.push_str("</table>");
 
@@ -170,8 +178,25 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
 
     h.push_str(&format!(
         "<footer>Généré par RamScope {} · {} processus, {} services, {} entrées de démarrage, {} tâches.<br>
-Les gains sont des estimations : la RAM d'un service svchost est partagée entre plusieurs services, et un service passé en manuel peut redémarrer à la demande.</footer></body></html>",
+Les gains sont des estimations : la RAM d'un service svchost est partagée entre plusieurs services, et un service passé en manuel peut redémarrer à la demande. Un hôte partagé ne compte que si tous ses services sont inclus dans le lot.</footer></body></html>",
         esc(&s.meta.version), s.counts.processes, s.counts.services, s.startup.len(), s.tasks.len()
     ));
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separe_les_gains_et_affiche_leur_nature() {
+        let s = crate::demo::DemoState::default().snapshot();
+        let h = build(&s);
+        assert!(h.contains("Tout de suite"));
+        assert!(h.contains("Au prochain démarrage"));
+        assert!(h.contains("estimé") || h.contains("non chiffrable"));
+        let interdit = format!("Rien à optimiser {} risque", "sans");
+        assert!(!h.contains(&interdit));
+        assert!(!h.contains("Gain</th>"));
+    }
 }

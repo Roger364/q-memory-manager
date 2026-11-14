@@ -689,6 +689,7 @@ impl DemoState {
                 description: p.5.to_string(),
                 company: p.6.to_string(),
                 path: p.7.to_string(),
+                created_at: 1_700_000_000_000_000 + p.0 as u64 * 10_000,
                 working_set: p.2 * MB,
                 private: p.3 * MB,
                 threads: 12,
@@ -783,12 +784,20 @@ impl DemoState {
                 p.has_window,
                 &p.services,
             );
-            if let Some(Action::Kill { pid, .. }) = &mut a.action {
+            if let Some(Action::Kill {
+                pid,
+                image_path,
+                created_at,
+                ..
+            }) = &mut a.action
+            {
                 *pid = p.pid;
+                *image_path = p.path.clone();
+                *created_at = p.created_at;
             }
             if rules::is_protected_process(&p.name) {
                 a.action = None;
-                a.gain = 0;
+                a.gain = Gain::unavailable();
             }
             p.advice = a;
             p.category = if !p.services.is_empty() {
@@ -851,7 +860,7 @@ impl DemoState {
             });
         }
 
-        processes.sort_by(|a, b| b.private.cmp(&a.private));
+        processes.sort_by_key(|p| std::cmp::Reverse(p.private));
         services.sort_by(|a, b| {
             a.advice
                 .level
@@ -884,22 +893,39 @@ impl DemoState {
             tasks_enabled: tasks.iter().filter(|t| t.enabled).count(),
             actionable: 0,
         };
-        let mut plan_gain = 0u64;
-        let mut plan_boot = 0u64;
-        let mut seen: HashSet<String> = HashSet::new();
-        for a in services
-            .iter()
-            .map(|s| &s.advice)
-            .chain(startup.iter().map(|s| &s.advice))
-        {
-            if a.action.is_some() && a.level.preselected() {
+        let mut planned: Vec<crate::plan::GainEntry> = Vec::new();
+        for s in services.iter().filter(|s| s.advice.level.preselected()) {
+            if let Some(action) = &s.advice.action {
                 counts.actionable += 1;
-                if seen.insert(format!("{:?}", a.action)) {
-                    plan_gain += a.gain;
-                    plan_boot += a.gain_next_boot;
-                }
+                let host = if s.host_shared > 1 && s.pid > 0 {
+                    Some(crate::plan::HostGain {
+                        pid: s.pid,
+                        services: s.host_shared,
+                        host_ram: s.host_ram,
+                    })
+                } else {
+                    None
+                };
+                planned.push(crate::plan::GainEntry {
+                    action: action.clone(),
+                    gain: s.advice.gain,
+                    gain_next_boot: s.advice.gain_next_boot,
+                    host,
+                });
             }
         }
+        for s in startup.iter().filter(|s| s.advice.level.preselected()) {
+            if let Some(action) = &s.advice.action {
+                counts.actionable += 1;
+                planned.push(crate::plan::GainEntry {
+                    action: action.clone(),
+                    gain: s.advice.gain,
+                    gain_next_boot: s.advice.gain_next_boot,
+                    host: None,
+                });
+            }
+        }
+        let (plan_gain, plan_boot) = crate::plan::total_gains(&planned);
         counts.actionable += tasks
             .iter()
             .filter(|t| t.advice.action.is_some() && t.advice.level.preselected())
@@ -948,45 +974,89 @@ impl DemoState {
             // « remettre en auto » PUIS « redémarrer le service »).
             let snap = self.snapshot();
             let (undo, res) = match a {
-                Action::Service { name, start } => {
+                Action::Service { name, start, from } => {
                     if rules::is_protected_service(name) {
                         (
                             None,
                             Err("Service vital : RamScope refuse de le modifier.".to_string()),
                         )
                     } else if let Some(s) = snap.services.iter().find(|s| s.name == *name) {
-                        let u = Action::Service {
-                            name: name.clone(),
-                            start: s.start,
-                        };
-                        // Comme sous Windows : changer le type de démarrage
-                        // n'arrête PAS un service déjà lancé.
-                        self.svc.insert(name.clone(), *start);
-                        (Some(u), Ok(()))
+                        if from.is_some() && from != &Some(s.start) {
+                            (
+                                None,
+                                Err(
+                                    "l'état du service a changé depuis l'analyse : action refusée"
+                                        .into(),
+                                ),
+                            )
+                        } else if from == &Some(*start) {
+                            (None, Err("le service est déjà dans l'état demandé".into()))
+                        } else {
+                            let u = Action::Service {
+                                name: name.clone(),
+                                start: s.start,
+                                from: None,
+                            };
+                            // Comme sous Windows : changer le type de démarrage
+                            // n'arrête PAS un service déjà lancé.
+                            self.svc.insert(name.clone(), *start);
+                            (Some(u), Ok(()))
+                        }
                     } else {
                         (None, Err("service introuvable".into()))
                     }
                 }
-                Action::Startup { id, enabled } => {
+                Action::Startup {
+                    id,
+                    enabled,
+                    was_enabled,
+                } => {
                     if let Some(s) = snap.startup.iter().find(|s| s.id == *id) {
-                        let u = Action::Startup {
-                            id: id.clone(),
-                            enabled: s.enabled,
-                        };
-                        self.startup.insert(id.clone(), *enabled);
-                        (Some(u), Ok(()))
+                        if was_enabled.is_some() && was_enabled != &Some(s.enabled) {
+                            (
+                                None,
+                                Err("l'état du démarrage a changé depuis l'analyse : action refusée".into()),
+                            )
+                        } else if was_enabled == &Some(*enabled) {
+                            (None, Err("l'entrée est déjà dans l'état demandé".into()))
+                        } else {
+                            let u = Action::Startup {
+                                id: id.clone(),
+                                enabled: s.enabled,
+                                was_enabled: None,
+                            };
+                            self.startup.insert(id.clone(), *enabled);
+                            (Some(u), Ok(()))
+                        }
                     } else {
                         (None, Err("entrée introuvable".into()))
                     }
                 }
-                Action::Task { path, enabled } => {
+                Action::Task {
+                    path,
+                    enabled,
+                    was_enabled,
+                } => {
                     if let Some(t) = snap.tasks.iter().find(|t| t.path == *path) {
-                        let u = Action::Task {
-                            path: path.clone(),
-                            enabled: t.enabled,
-                        };
-                        self.tasks.insert(path.clone(), *enabled);
-                        (Some(u), Ok(()))
+                        if was_enabled.is_some() && was_enabled != &Some(t.enabled) {
+                            (
+                                None,
+                                Err(
+                                    "l'état de la tâche a changé depuis l'analyse : action refusée"
+                                        .into(),
+                                ),
+                            )
+                        } else if was_enabled == &Some(*enabled) {
+                            (None, Err("la tâche est déjà dans l'état demandé".into()))
+                        } else {
+                            let u = Action::Task {
+                                path: path.clone(),
+                                enabled: t.enabled,
+                                was_enabled: None,
+                            };
+                            self.tasks.insert(path.clone(), *enabled);
+                            (Some(u), Ok(()))
+                        }
                     } else {
                         (None, Err("tâche introuvable".into()))
                     }
@@ -1036,15 +1106,27 @@ impl DemoState {
                         (None, Err("service introuvable".into()))
                     }
                 }
-                Action::Kill { pid, name } => {
+                Action::Kill {
+                    pid,
+                    name,
+                    image_path,
+                    created_at,
+                } => {
                     if rules::is_protected_process(name) {
                         (
                             None,
                             Err("Processus vital : RamScope refuse de le terminer.".to_string()),
                         )
-                    } else if snap.processes.iter().any(|p| p.pid == *pid) {
-                        self.killed.insert(*pid);
-                        (None, Ok(()))
+                    } else if let Some(p) = snap.processes.iter().find(|p| p.pid == *pid) {
+                        if p.created_at != *created_at || !p.path.eq_ignore_ascii_case(image_path) {
+                            (
+                                None,
+                                Err("l'identité du processus a changé depuis l'analyse : action refusée".into()),
+                            )
+                        } else {
+                            self.killed.insert(*pid);
+                            (None, Ok(()))
+                        }
                     } else {
                         (None, Err("processus déjà terminé".into()))
                     }
@@ -1059,5 +1141,51 @@ impl DemoState {
             });
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kill_propose(state: &DemoState) -> Action {
+        state
+            .snapshot()
+            .processes
+            .iter()
+            .find_map(|p| match &p.advice.action {
+                Some(Action::Kill { .. }) => Some(Action::Kill {
+                    pid: p.pid,
+                    name: p.name.clone(),
+                    image_path: p.path.clone(),
+                    created_at: p.created_at,
+                }),
+                _ => None,
+            })
+            .expect("la démo doit proposer au moins un processus à terminer")
+    }
+
+    #[test]
+    fn refuse_un_kill_dont_l_identite_a_change() {
+        let mut state = DemoState::default();
+        let mut action = kill_propose(&state);
+        if let Action::Kill { created_at, .. } = &mut action {
+            *created_at += 1;
+        }
+        let entries = state.apply(&[action]);
+        assert!(!entries[0].ok);
+        assert!(
+            entries[0].message.contains("identité"),
+            "message : {}",
+            entries[0].message
+        );
+    }
+
+    #[test]
+    fn accepte_un_kill_dont_l_identite_correspond() {
+        let mut state = DemoState::default();
+        let action = kill_propose(&state);
+        let entries = state.apply(&[action]);
+        assert!(entries[0].ok, "message : {}", entries[0].message);
     }
 }

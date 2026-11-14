@@ -52,6 +52,103 @@ impl Level {
     }
 }
 
+/// Nature d'un gain : mesuré avant/après, estimé à partir d'une mesure, ou
+/// indisponible faute de mesure.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GainNature {
+    #[default]
+    Unavailable,
+    Estimated,
+    Measured,
+}
+
+impl GainNature {
+    pub fn label(self) -> &'static str {
+        match self {
+            GainNature::Measured => "mesuré",
+            GainNature::Estimated => "estimé",
+            GainNature::Unavailable => "non chiffrable",
+        }
+    }
+}
+
+/// Portée d'un gain : mémoire privée, working set, part d'un hôte partagé,
+/// RAM d'un hôte entier, ou mélange de plusieurs portées.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GainScope {
+    #[default]
+    Private,
+    WorkingSet,
+    HostPart,
+    Host,
+    System,
+    Mixed,
+}
+
+/// Mesure de gain typée : jamais un entier nu présenté comme une vérité.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Gain {
+    pub bytes: u64,
+    pub nature: GainNature,
+    pub scope: GainScope,
+    /// Vrai si ce gain peut être additionné à ceux d'éléments distincts.
+    pub additive: bool,
+}
+
+impl Gain {
+    pub fn unavailable() -> Self {
+        Gain::default()
+    }
+
+    pub fn estimated(bytes: u64, scope: GainScope) -> Self {
+        if bytes == 0 {
+            return Gain::unavailable();
+        }
+        Gain {
+            bytes,
+            nature: GainNature::Estimated,
+            scope,
+            additive: matches!(scope, GainScope::Private | GainScope::WorkingSet),
+        }
+    }
+
+    /// Un zéro mesuré reste une mesure : il ne doit pas être confondu avec
+    /// l'absence de mesure.
+    pub fn measured(bytes: u64, scope: GainScope) -> Self {
+        Gain {
+            bytes,
+            nature: GainNature::Measured,
+            scope,
+            additive: matches!(scope, GainScope::Private | GainScope::WorkingSet),
+        }
+    }
+
+    /// Additionne un gain à un total. Un gain indisponible n'ajoute rien.
+    pub fn merge(&mut self, other: &Gain) {
+        if other.bytes == 0 || other.nature == GainNature::Unavailable {
+            return;
+        }
+        if self.bytes == 0 {
+            *self = *other;
+            self.additive = false;
+            return;
+        }
+        self.bytes = self.bytes.saturating_add(other.bytes);
+        self.nature = if self.nature == GainNature::Measured && other.nature == GainNature::Measured
+        {
+            GainNature::Measured
+        } else {
+            GainNature::Estimated
+        };
+        if self.scope != other.scope {
+            self.scope = GainScope::Mixed;
+        }
+        self.additive = false;
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Advice {
     pub level: Level,
@@ -59,10 +156,14 @@ pub struct Advice {
     pub reason: String,
     /// Action conseillée (None = ne rien faire).
     pub action: Option<Action>,
-    /// Octets de RAM réellement récupérables tout de suite (estimation).
-    pub gain: u64,
-    /// Octets qui seront libérés au prochain démarrage (non comptés dans gain).
-    pub gain_next_boot: u64,
+    /// Verrou de sécurité, distinct de la gravité : un élément verrouillé
+    /// peut être `Keep` ou `System` sans être vital.
+    #[serde(default)]
+    pub locked: bool,
+    /// Gain récupérable tout de suite, avec sa nature et sa portée.
+    pub gain: Gain,
+    /// Gain récupérable au prochain démarrage, jamais compté dans `gain`.
+    pub gain_next_boot: Gain,
 }
 
 impl Advice {
@@ -72,8 +173,9 @@ impl Advice {
             label: level.label().to_string(),
             reason: reason.to_string(),
             action: None,
-            gain: 0,
-            gain_next_boot: 0,
+            locked: false,
+            gain: Gain::unavailable(),
+            gain_next_boot: Gain::unavailable(),
         }
     }
     pub fn with_action(mut self, a: Action) -> Self {
@@ -118,13 +220,40 @@ impl StartType {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {
     /// Changer le type de démarrage d'un service.
-    Service { name: String, start: StartType },
+    Service {
+        name: String,
+        start: StartType,
+        /// État constaté lors de l'analyse ; `None` pour une action de restauration.
+        #[serde(default)]
+        from: Option<StartType>,
+    },
     /// Activer / désactiver une entrée de démarrage (mécanisme Gestionnaire des tâches).
-    Startup { id: String, enabled: bool },
+    Startup {
+        id: String,
+        enabled: bool,
+        /// État constaté lors de l'analyse ; `None` pour une action de restauration.
+        #[serde(default)]
+        was_enabled: Option<bool>,
+    },
     /// Activer / désactiver une tâche planifiée.
-    Task { path: String, enabled: bool },
+    Task {
+        path: String,
+        enabled: bool,
+        /// État constaté lors de l'analyse ; `None` pour une action de restauration.
+        #[serde(default)]
+        was_enabled: Option<bool>,
+    },
     /// Terminer un processus (irréversible, hors rollback).
-    Kill { pid: u32, name: String },
+    Kill {
+        pid: u32,
+        name: String,
+        /// Chemin de l'image au moment de l'analyse (identité de la cible).
+        #[serde(default)]
+        image_path: String,
+        /// Heure de création FILETIME (100 ns depuis 1601) ; 0 = inconnue.
+        #[serde(default)]
+        created_at: u64,
+    },
     /// Arrêter un service maintenant (libère la RAM immédiatement).
     StopService { name: String },
     /// Démarrer un service (utilisé par la restauration).
@@ -134,19 +263,19 @@ pub enum Action {
 impl Action {
     pub fn describe(&self) -> String {
         match self {
-            Action::Service { name, start } => {
+            Action::Service { name, start, .. } => {
                 format!("Service « {name} » → {}", start.label())
             }
-            Action::Startup { id, enabled } => format!(
+            Action::Startup { id, enabled, .. } => format!(
                 "Démarrage « {} » → {}",
                 id.rsplit('|').next().unwrap_or(id),
                 if *enabled { "activé" } else { "désactivé" }
             ),
-            Action::Task { path, enabled } => format!(
+            Action::Task { path, enabled, .. } => format!(
                 "Tâche « {path} » → {}",
                 if *enabled { "activée" } else { "désactivée" }
             ),
-            Action::Kill { pid, name } => format!("Terminer {name} (PID {pid})"),
+            Action::Kill { pid, name, .. } => format!("Terminer {name} (PID {pid})"),
             Action::StopService { name } => format!("Arrêter le service « {name} » maintenant"),
             Action::StartService { name } => format!("Redémarrer le service « {name} »"),
         }
@@ -169,6 +298,9 @@ pub struct ProcessInfo {
     pub description: String,
     pub company: String,
     pub path: String,
+    /// Heure de création FILETIME (100 ns depuis 1601) ; 0 si indisponible.
+    #[serde(default)]
+    pub created_at: u64,
     /// Mémoire totale vue par le Gestionnaire des tâches (working set).
     pub working_set: u64,
     /// Mémoire privée : celle réellement libérée si on ferme le processus.
@@ -265,8 +397,8 @@ pub struct Snapshot {
     pub services: Vec<ServiceInfo>,
     pub startup: Vec<StartupItem>,
     pub tasks: Vec<TaskItem>,
-    pub plan_gain: u64,
-    pub plan_gain_next_boot: u64,
+    pub plan_gain: Gain,
+    pub plan_gain_next_boot: Gain,
     pub counts: Counts,
 }
 
@@ -310,7 +442,18 @@ pub struct ActionResult {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MemoryDelta {
+    pub available_before: u64,
+    pub available_after: u64,
+    /// Gain mesuré après l'application ; zéro si la mémoire n'a pas augmenté.
+    pub gain: Gain,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ApplyResponse {
     pub results: Vec<ActionResult>,
     pub rollback_id: Option<String>,
+    /// Mesure disponible/après uniquement quand un arrêt immédiat a été demandé.
+    #[serde(default)]
+    pub memory: Option<MemoryDelta>,
 }

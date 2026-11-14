@@ -23,12 +23,12 @@ const sort = {
 
 const LEVELS = [
   ['junk', 'Superflu', 'Inutile dans la quasi-totalité des cas.'],
-  ['trim', 'À alléger', 'Démarrage automatique ou télémétrie superflue : gain net, aucune perte réelle.'],
+  ['trim', 'À alléger', 'Démarrage automatique ou télémétrie superflue : le gain intervient au prochain démarrage.'],
   ['opt', 'Selon usage', 'Utile seulement dans certains cas. À toi de trancher.'],
   ['unk', 'Non répertorié', 'RamScope ne connaît pas cet élément : il ne conseille rien.'],
   ['keep', 'À garder', 'Utile (pilote, sécurité, ton usage).'],
   ['sys', 'Système', 'Composant Windows normal : laisse-le.'],
-  ['crit', 'Vital', 'Verrouillé : RamScope refuse toute modification.'],
+  ['crit', 'Vital', 'Cœur de Windows : RamScope refuse toute modification.'],
 ];
 const LVL_CLS = { critical: 'crit', system: 'sys', keep: 'keep', optional: 'opt', trim: 'trim', junk: 'junk', unknown: 'unk' };
 
@@ -48,7 +48,10 @@ function dur(s) {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return (d ? d + ' j ' : '') + h + ' h ' + m + ' min';
 }
-function badge(a) { return `<span class="b ${LVL_CLS[a.level] || 'unk'}">${esc(a.label)}</span>`; }
+function badge(a) {
+  const lock = a.locked ? ' <span title="Verrouillé par RamScope">🔒</span>' : '';
+  return `<span class="b ${LVL_CLS[a.level] || 'unk'}">${esc(a.label)}${lock}</span>`;
+}
 function toast(msg, kind = '') {
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
@@ -75,7 +78,10 @@ function keyOf(kind, item) {
   return 'k:' + item.pid;
 }
 function selectable(item) {
-  return item.advice && item.advice.action && item.advice.level !== 'critical';
+  return item.advice && item.advice.action && !item.advice.locked;
+}
+function batchable(item) {
+  return selectable(item) && item.advice.action.kind !== 'kill';
 }
 function entryFor(kind, item) {
   const a = item.advice.action;
@@ -86,43 +92,82 @@ function entryFor(kind, item) {
   else { label = item.name + ' (PID ' + item.pid + ')'; sub = 'Processus terminé — perte des données non enregistrées'; }
   return {
     key: keyOf(kind, item), kind, action: a, label, sub,
-    gain: item.advice.gain || 0, boot: item.advice.gain_next_boot || 0,
+    gain: item.advice.gain || emptyGain(), boot: item.advice.gain_next_boot || emptyGain(),
     level: item.advice.level, running: !!item.running, name: item.name,
+    host: kind === 'services' && item.host_shared > 1 && item.pid ? item.pid : 0,
+    hostShared: item.host_shared || 1, hostRam: item.host_ram || 0,
   };
 }
 function startLabel(s) {
   return { auto: 'Automatique', delayed: 'Auto (différé)', manual: 'Manuel', disabled: 'Désactivé' }[s] || s;
 }
+function emptyGain() { return { bytes: 0, nature: 'unavailable', scope: 'private', additive: false }; }
+function gainBytes(g) { return g && g.bytes ? g.bytes : 0; }
+function gainNature(g) { return g && g.nature === 'measured' ? 'mesuré' : g && g.nature === 'estimated' ? 'estimé' : 'non chiffrable'; }
+function gainNatureBadge(g) {
+  const n = gainNature(g);
+  const cls = n === 'mesuré' ? 'measured' : n === 'estimé' ? 'estimated' : 'unavailable';
+  return `<span class="nature ${cls}">${n}</span>`;
+}
+function gainText(g) { return gainBytes(g) ? `${fmt(g.bytes)} ${gainNatureBadge(g)}` : 'non chiffrable'; }
+function gainLine(g) {
+  if (!gainBytes(g)) return 'non chiffrable';
+  const part = g.scope === 'host_part' ? ' <span class="sub">part d’hôte</span>' : '';
+  return `${fmt(g.bytes)} ${gainNatureBadge(g)}${part}`;
+}
+function addGain(total, g) {
+  if (!gainBytes(g) || g.nature === 'unavailable') return;
+  total.bytes += g.bytes;
+  total.nature = 'estimated';
+}
+function aggregateGains(entries) {
+  const now = emptyGain(), boot = emptyGain();
+  const hosts = new Map();
+  entries.forEach(e => {
+    if (e.kind === 'services' && e.host && e.hostShared > 1) {
+      let h = hosts.get(e.host);
+      if (!h) { h = { names: new Set(), expected: e.hostShared, ram: e.hostRam }; hosts.set(e.host, h); }
+      h.names.add(e.name);
+      h.expected = Math.max(h.expected, e.hostShared);
+      h.ram = Math.max(h.ram, e.hostRam);
+    } else {
+      addGain(now, e.gain);
+      addGain(boot, e.boot);
+    }
+  });
+  hosts.forEach(h => {
+    if (h.expected > 1 && h.names.size >= h.expected && h.ram > 0) {
+      addGain(boot, { bytes: h.ram, nature: 'estimated', scope: 'host', additive: false });
+    }
+  });
+  return { now, boot };
+}
 function toggle(kind, item) {
+  if (!batchable(item)) return;
   const e = entryFor(kind, item);
   if (sel.has(e.key)) sel.delete(e.key); else sel.set(e.key, e);
   paint();
 }
 function selTotals() {
-  let now = 0, boot = 0, kills = 0;
-  const stopNow = $('#stopNow') && $('#stopNow').checked;
-  sel.forEach(e => {
-    now += e.gain; boot += e.boot;
-    if (e.kind === 'processes') kills++;
-    if (stopNow && e.kind === 'services' && e.running) now += e.boot;
-  });
-  if (stopNow) boot = 0;
-  return { now, boot, kills };
+  const gains = aggregateGains(Array.from(sel.values()));
+  let kills = 0;
+  sel.forEach(e => { if (e.kind === 'processes') kills++; });
+  return { now: gains.now, boot: gains.boot, kills };
 }
 function allItems(kind) {
   if (!S) return [];
   return kind === 'processes' ? S.processes : kind === 'services' ? S.services : kind === 'startup' ? S.startup : S.tasks;
 }
-function selectSafe() {
+function selectReversible() {
   ['services', 'startup', 'tasks'].forEach(kind => {
     allItems(kind).forEach(it => {
-      if (selectable(it) && (it.advice.level === 'junk' || it.advice.level === 'trim')) {
+      if (batchable(it) && (it.advice.level === 'junk' || it.advice.level === 'trim')) {
         const e = entryFor(kind, it); sel.set(e.key, e);
       }
     });
   });
   paint();
-  toast('Sélection : tout ce qui est classé « superflu » ou « à alléger ». Relis la liste avant d’appliquer.', 'ok');
+  toast('Sélection : éléments réversibles à gain différé, classés « superflu » ou « à alléger ». Relis la liste avant d’appliquer.', 'ok');
 }
 
 /* --------------------------------------------------------------- chargement */
@@ -189,9 +234,9 @@ function renderHero() {
         <span><i class="dot" style="background:#0f1725;border:1px solid #2b3648"></i>Libre ${fmt(M.available)}</span>
       </div>
     </div>
-    <div class="card gain">
+    <div class="card gain" title="Estimation, agrégée par hôte : un hôte partagé ne compte que si tous ses services sont inclus">
       <div class="k">Récupérable au prochain démarrage</div>
-      <div class="v">${fmt(S.plan_gain_next_boot)}</div>
+      <div class="v">${gainBytes(S.plan_gain_next_boot) ? fmt(gainBytes(S.plan_gain_next_boot)) : 'non chiffrable'}</div>
       <div class="s">${S.counts.actionable} réglages superflus détectés</div>
     </div>
     <div class="card gain2">
@@ -199,20 +244,20 @@ function renderHero() {
       <div class="v">${fmt(immediatePotential())}</div>
       <div class="s">en fermant les applications non essentielles</div>
     </div>
-    <div class="card">
+    <div class="card" title="Commit Windows : mémoire validée (CommitTotal de GetPerformanceInfo)">
       <div class="k">Mémoire validée (commit)</div>
       <div class="v">${fmt(M.commit_used)}</div>
       <div class="s">sur ${fmt(M.commit_limit)} autorisés</div>
     </div>
-    <div class="card">
+    <div class="card" title="KernelTotal : mémoire noyau et pilotes. Compression : working set du processus Memory Compression, une approximation">
       <div class="k">Noyau + compression</div>
       <div class="v">${fmt(M.kernel)}</div>
-      <div class="s">dont ${fmt(M.compressed)} compressés (ça t’économise de la RAM)</div>
+      <div class="s">dont ${fmt(M.compressed)} de working set « Memory Compression » (approximation)</div>
     </div>`;
 }
 
 function immediatePotential() {
-  return S.processes.filter(p => selectable(p)).reduce((a, p) => a + p.private, 0);
+  return S.processes.filter(p => selectable(p)).reduce((a, p) => a + gainBytes(p.advice.gain), 0);
 }
 
 const TABS = [
@@ -244,8 +289,8 @@ function renderTools() {
     </div>
     <label class="switch"><input type="checkbox" id="onlyAction" ${onlyAction ? 'checked' : ''}> Actionnable seulement</label>
     <label class="switch"><input type="checkbox" id="autoRefresh" ${auto ? 'checked' : ''}> Auto 15 s</label>
-    ${tab === 'plan' ? `<button class="btn sm" id="btnSafe">Tout le « sans risque »</button>` : ''}
-    ${tab !== 'plan' ? `<button class="btn sm" id="btnSelView">Sélectionner les conseillés</button>` : ''}`;
+    ${tab === 'plan' ? `<button class="btn sm" id="btnSafe">Sélectionner les éléments réversibles à gain différé</button>` : ''}
+    ${tab !== 'plan' ? `<button class="btn sm" id="btnSelView">Sélectionner les actions réversibles de cette vue</button>` : ''}`;
   const qi = $('#q');
   if (qi) {
     qi.oninput = () => { q = qi.value; renderView(); };
@@ -258,10 +303,14 @@ function renderTools() {
   });
   const oa = $('#onlyAction'); if (oa) oa.onchange = () => { onlyAction = oa.checked; renderView(); };
   const ar = $('#autoRefresh'); if (ar) ar.onchange = () => { auto = ar.checked; };
-  const bs = $('#btnSafe'); if (bs) bs.onclick = selectSafe;
+  const bs = $('#btnSafe'); if (bs) bs.onclick = selectReversible;
   const bv = $('#btnSelView'); if (bv) bv.onclick = () => {
     const kind = tab;
-    filtered(kind).forEach(it => { if (selectable(it)) { const e = entryFor(kind, it); sel.set(e.key, e); } });
+    if (kind === 'processes') {
+      toast('La terminaison d’un processus ne peut pas être sélectionnée en masse : choisis-la ligne par ligne.', 'ko');
+      return;
+    }
+    filtered(kind).forEach(it => { if (batchable(it)) { const e = entryFor(kind, it); sel.set(e.key, e); } });
     paint();
   };
 }
@@ -286,7 +335,7 @@ function sortVal(it, k) {
     case 'start': return { auto: 0, delayed: 1, manual: 2, disabled: 3 }[it.start];
     case 'state': return it.running ? 0 : 1;
     case 'enabled': return it.enabled ? 0 : 1;
-    case 'gain': return (it.advice.gain || 0) + (it.advice.gain_next_boot || 0);
+    case 'gain': return gainBytes(it.advice.gain);
     default: return 0;
   }
 }
@@ -375,59 +424,69 @@ function viewOverview() {
 /* ----------------------------------------------------------------- vue plan */
 function viewPlan() {
   const groups = [
-    ['junk', 'Superflu — aucun risque réel', 'Télémétrie, démos magasin, composants abandonnés. Rien de ton usage quotidien ne dépend de ces éléments.'],
-    ['trim', 'À alléger — gain net', 'Démarrages automatiques et agents d’arrière-plan dont tu n’as pas besoin en permanence. Les logiciels concernés continueront de fonctionner quand tu les ouvriras.'],
+    ['junk', 'Superflu — éléments inutiles dans la quasi-totalité des cas', 'Télémétrie, démos magasin, composants abandonnés. Rien de ton usage quotidien ne dépend de ces éléments.'],
+    ['trim', 'À alléger — gain au prochain démarrage', 'Démarrages automatiques et agents d’arrière-plan dont tu n’as pas besoin en permanence. Les logiciels concernés continueront de fonctionner quand tu les ouvriras.'],
     ['opt', 'Selon ton usage — à toi de décider', 'Ces éléments servent dans certains cas précis (imprimante, Bluetooth, tactile, jeux Xbox…). Lis la raison et coche seulement ce qui ne te concerne pas.'],
   ];
   let html = `<div class="note info">
-    Passer un service en <b>manuel</b> ou désactiver un démarrage ne libère pas la RAM instantanément : le gain arrive au prochain redémarrage.
-    Coche <b>« Libérer la RAM maintenant »</b> dans la barre du bas pour arrêter aussi les services concernés immédiatement.
+    Passer un service en <b>manuel</b> ou désactiver un démarrage ne libère pas la RAM instantanément : le gain arrive au prochain redémarrage, et seulement si tous les services d’un hôte partagé sont concernés.
+    Coche <b>« Arrêter aussi les services maintenant »</b> dans la barre du bas : la mémoire réellement rendue est mesurée après l’application, jamais ajoutée au gain différé.
   </div>`;
-  let total = 0;
+  let rowsCount = 0;
   groups.forEach(([lvl, title, desc]) => {
     const rows = [];
     ['services', 'startup', 'tasks'].forEach(kind => {
-      allItems(kind).filter(it => it.advice.level === lvl && selectable(it) && match(it, kind))
+      allItems(kind).filter(it => it.advice.level === lvl && batchable(it) && match(it, kind))
         .forEach(it => rows.push({ kind, it }));
     });
     if (!rows.length) return;
-    rows.sort((a, b) => (b.it.advice.gain_next_boot + b.it.advice.gain) - (a.it.advice.gain_next_boot + a.it.advice.gain));
-    const g = rows.reduce((s, r) => s + r.it.advice.gain_next_boot + r.it.advice.gain, 0);
-    total += g;
+    const weight = r => Math.max(gainBytes(r.it.advice.gain), gainBytes(r.it.advice.gain_next_boot));
+    rows.sort((a, b) => weight(b) - weight(a));
+    const agg = aggregateGains(rows.map(r => entryFor(r.kind, r.it)));
+    rowsCount += rows.length;
+    const gainTags = [];
+    if (agg.now.bytes) gainTags.push(`<span class="tag">${fmt(agg.now.bytes)} tout de suite ${gainNatureBadge(agg.now)}</span>`);
+    if (agg.boot.bytes) gainTags.push(`<span class="tag">${fmt(agg.boot.bytes)} au prochain démarrage ${gainNatureBadge(agg.boot)}</span>`);
+    const tag = gainTags.length ? gainTags.join(' ') : '<span class="tag">non chiffrable</span>';
     html += `<div class="section">
       <h3><span class="b ${LVL_CLS[lvl]}">${esc(rows[0].it.advice.label)}</span> ${title}
         <span class="tag">${rows.length} éléments</span>
-        <span class="tag" style="color:#86efac;border-color:#166534">${fmt(g)}</span>
+        <span class="gain-tags">${tag}</span>
         <button class="btn sm" data-grp="${lvl}">Cocher ce groupe</button></h3>
       <p class="desc">${desc}</p>
       <div class="tablewrap"><table><thead><tr>
-        <th style="width:34px"></th><th>Élément</th><th>Type</th><th>Changement</th><th class="num">Gain</th><th class="why">Pourquoi</th>
+        <th style="width:34px"></th><th>Élément</th><th>Type</th><th>Changement</th><th class="num">Gain</th><th></th>
       </tr></thead><tbody>
       ${rows.map(({ kind, it }) => {
         const e = entryFor(kind, it);
         const on = sel.has(e.key);
+        const dkey = kind + ':' + rowId(kind, it);
+        const open = expanded.has(dkey);
         const type = kind === 'services' ? 'Service' : kind === 'startup' ? 'Démarrage' : 'Tâche';
-        return `<tr class="${on ? 'sel' : ''}">
-          <td><input type="checkbox" class="cbx" data-k="${kind}" data-id="${esc(rowId(kind, it))}" ${on ? 'checked' : ''}></td>
+        const row = `<tr class="${on ? 'sel' : ''}">
+          <td><input type="checkbox" class="cbx" data-k="${kind}" data-id="${esc(rowId(kind, it))}" aria-label="Sélectionner ${esc(it.display || it.name)}" ${on ? 'checked' : ''}></td>
           <td><div class="name">${esc(it.display || it.name)}</div><div class="sub mono">${esc(it.name !== (it.display || it.name) ? it.name : (it.command || it.path || ''))}</div></td>
           <td><span class="tag">${type}</span>${kind === 'services' ? `<div class="sub">${esc(it.state)} · ${startLabel(it.start)}</div>` : ''}</td>
           <td style="font-size:12.5px">${esc(e.sub)}</td>
-          <td class="num">${fmt(e.boot + e.gain)}${e.gain ? '' : '<div class="sub">au boot</div>'}</td>
-          <td class="why">${esc(it.advice.reason)}</td>
+          <td class="num">${gainLine(e.gain)}${gainBytes(e.boot) ? `<div class="sub">au prochain démarrage : ${fmt(e.boot.bytes)} ${gainNatureBadge(e.boot)}</div>` : ''}</td>
+          <td><button class="btn sm ghost" data-exp="${esc(dkey)}" aria-expanded="${open}">${open ? 'Masquer' : 'Détails'}</button></td>
         </tr>`;
+        const detail = open ? `<tr class="detail"><td colspan="6">${detailBox(kind, it)}</td></tr>` : '';
+        return row + detail;
       }).join('')}
       </tbody></table></div></div>`;
   });
-  if (total === 0) html += `<div class="empty">Rien à optimiser avec les filtres actuels. Décoche les filtres, ou bonne nouvelle : ta configuration est déjà saine.</div>`;
+  if (rowsCount === 0) html += `<div class="empty">Rien à optimiser avec les filtres actuels. Décoche les filtres, ou bonne nouvelle : ta configuration est déjà saine.</div>`;
   setTimeout(() => {
     $$('#view [data-grp]').forEach(b => b.onclick = () => {
       const lvl = b.dataset.grp;
       ['services', 'startup', 'tasks'].forEach(kind => allItems(kind)
-        .filter(it => it.advice.level === lvl && selectable(it) && match(it, kind))
+        .filter(it => it.advice.level === lvl && batchable(it) && match(it, kind))
         .forEach(it => { const e = entryFor(kind, it); sel.set(e.key, e); }));
       paint();
     });
     bindChecks();
+    bindDetails();
   }, 0);
   return html;
 }
@@ -444,26 +503,36 @@ function bindChecks() {
     if (it) toggle(c.dataset.k, it);
   });
 }
+function bindDetails() {
+  $$('#view [data-exp]').forEach(b => b.onclick = () => {
+    const k = b.dataset.exp;
+    if (expanded.has(k)) expanded.delete(k); else expanded.add(k);
+    renderView();
+  });
+}
 
 /* --------------------------------------------------------------- vue table */
 const COLS = {
-  processes: [['name', 'Processus'], ['pid', 'PID', 'num'], ['private', 'RAM privée', 'num'], ['ws', 'RAM totale', 'num'], ['cat', 'Type'], ['level', 'Verdict'], ['why', 'Pourquoi', 'why'], ['act', '', 'num']],
-  services: [['name', 'Service'], ['state', 'État'], ['start', 'Démarrage'], ['ram', 'RAM', 'num'], ['level', 'Verdict'], ['why', 'Pourquoi', 'why'], ['act', '', 'num']],
-  startup: [['name', 'Entrée'], ['loc', 'Emplacement'], ['enabled', 'État'], ['ram', 'RAM actuelle', 'num'], ['level', 'Verdict'], ['why', 'Pourquoi', 'why'], ['act', '', 'num']],
-  tasks: [['name', 'Tâche'], ['trig', 'Déclencheurs'], ['enabled', 'État'], ['level', 'Verdict'], ['why', 'Pourquoi', 'why'], ['act', '', 'num']],
+  processes: [['name', 'Processus'], ['pid', 'PID', 'num'], ['private', 'RAM privée', 'num'], ['ws', 'RAM totale', 'num'], ['cat', 'Type'], ['level', 'Verdict'], ['act', '', 'num']],
+  services: [['name', 'Service'], ['state', 'État'], ['start', 'Démarrage'], ['ram', 'RAM', 'num'], ['level', 'Verdict'], ['act', '', 'num']],
+  startup: [['name', 'Entrée'], ['loc', 'Emplacement'], ['enabled', 'État'], ['ram', 'RAM actuelle', 'num'], ['level', 'Verdict'], ['act', '', 'num']],
+  tasks: [['name', 'Tâche'], ['trig', 'Déclencheurs'], ['enabled', 'État'], ['level', 'Verdict'], ['act', '', 'num']],
 };
 function viewTable(kind) {
   const rows = filtered(kind);
   const s = sort[kind];
   const maxRam = Math.max(1, ...rows.map(r => r.private || r.ram || 0));
-  const head = COLS[kind].map(([k, l, c]) =>
-    `<th class="${c || ''}" data-sort="${k}">${l}${s.k === k ? ` <span class="ar">${s.d > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('');
+  const head = COLS[kind].map(([k, l, c]) => {
+    const sortable = !['cat', 'loc', 'trig', 'act'].includes(k);
+    return `<th class="${c || ''}" data-sort="${k}"${sortable ? ' tabindex="0" role="button"' : ''}>${l}${s.k === k ? ` <span class="ar">${s.d > 0 ? '▲' : '▼'}</span>` : ''}</th>`;
+  }).join('');
   const body = rows.map(it => {
     const id = rowId(kind, it);
     const key = keyOf(kind, it);
     const on = sel.has(key);
     const can = selectable(it);
-    const locked = it.advice.level === 'critical';
+    const locked = it.advice.locked;
+    const dkey = kind + ':' + id;
     let cells = '';
     const nameCell = `<div class="name">${esc(it.display || it.name)}</div>` +
       (kind === 'services' ? `<div class="sub mono">${esc(it.name)}</div>`
@@ -472,31 +541,32 @@ function viewTable(kind) {
     const ramCell = (b) => `<div>${fmt(b)}</div><div class="bar" style="margin-top:4px"><i style="width:${(b / maxRam * 100).toFixed(1)}%"></i></div>`;
     const act = `<div class="rowbtn">
         ${can ? `<button class="btn sm ${kind === 'processes' ? 'danger' : 'primary'}" data-do="${kind}" data-id="${esc(id)}">${kind === 'processes' ? 'Terminer' : kind === 'services' ? startLabel(it.advice.action.start) : 'Désactiver'}</button>` : ''}
-        <button class="btn sm ghost" data-exp="${kind}:${esc(id)}">Détails</button>
+        ${kind === 'processes' && can ? '<span class="tag bad">irréversible</span>' : ''}
+        <button class="btn sm ghost" data-exp="${esc(dkey)}" aria-expanded="${expanded.has(dkey)}">${expanded.has(dkey) ? 'Masquer' : 'Détails'}</button>
       </div>`;
     if (kind === 'processes') {
       cells = `<td>${nameCell}</td><td class="num">${it.pid}</td><td class="num">${ramCell(it.private)}</td>
         <td class="num">${fmt(it.working_set)}</td><td><span class="tag">${esc(it.category)}</span>${it.has_window ? '<div class="sub">fenêtre ouverte</div>' : ''}</td>
-        <td>${badge(it.advice)}</td><td class="why">${esc(it.advice.reason)}</td><td class="num">${act}</td>`;
+        <td>${badge(it.advice)}</td><td class="num">${act}</td>`;
     } else if (kind === 'services') {
       cells = `<td>${nameCell}</td>
         <td><span class="tag ${it.running ? 'run' : 'off'}">${esc(it.state)}</span>${it.host_shared > 1 ? `<div class="sub">hôte partagé ×${it.host_shared}</div>` : ''}</td>
         <td><span class="tag ${it.start === 'auto' || it.start === 'delayed' ? 'on' : 'off'}">${startLabel(it.start)}</span></td>
-        <td class="num">${ramCell(it.ram)}</td><td>${badge(it.advice)}</td><td class="why">${esc(it.advice.reason)}</td><td class="num">${act}</td>`;
+        <td class="num">${ramCell(it.ram)}</td><td>${badge(it.advice)}</td><td class="num">${act}</td>`;
     } else if (kind === 'startup') {
       cells = `<td>${nameCell}</td><td><span class="tag">${esc(it.location)}</span></td>
         <td><span class="tag ${it.enabled ? 'on' : 'off'}">${it.enabled ? 'Activé' : 'Désactivé'}</span></td>
-        <td class="num">${it.ram ? fmt(it.ram) : '—'}</td><td>${badge(it.advice)}</td><td class="why">${esc(it.advice.reason)}</td><td class="num">${act}</td>`;
+        <td class="num">${it.ram ? fmt(it.ram) : '—'}</td><td>${badge(it.advice)}</td><td class="num">${act}</td>`;
     } else {
       cells = `<td>${nameCell}</td><td>${it.triggers.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')}</td>
         <td><span class="tag ${it.enabled ? 'on' : 'off'}">${it.enabled ? 'Activée' : 'Désactivée'}</span></td>
-        <td>${badge(it.advice)}</td><td class="why">${esc(it.advice.reason)}</td><td class="num">${act}</td>`;
+        <td>${badge(it.advice)}</td><td class="num">${act}</td>`;
     }
     const cb = locked
-      ? `<span title="Élément vital : verrouillé" style="opacity:.5">🔒</span>`
-      : can ? `<input type="checkbox" class="cbx" data-k="${kind}" data-id="${esc(id)}" ${on ? 'checked' : ''}>` : '';
+      ? `<span title="Élément verrouillé par RamScope" style="opacity:.5">🔒</span>`
+      : batchable(it) ? `<input type="checkbox" class="cbx" data-k="${kind}" data-id="${esc(id)}" aria-label="Sélectionner ${esc(it.display || it.name)}" ${on ? 'checked' : ''}>` : '';
     let detail = '';
-    if (expanded.has(kind + ':' + id)) detail = `<tr class="detail"><td colspan="${COLS[kind].length + 1}">${detailBox(kind, it)}</td></tr>`;
+    if (expanded.has(dkey)) detail = `<tr class="detail"><td colspan="${COLS[kind].length + 1}">${detailBox(kind, it)}</td></tr>`;
     return `<tr class="${on ? 'sel' : ''} ${locked ? 'locked' : ''}"><td>${cb}</td>${cells}</tr>${detail}`;
   }).join('');
   const note = kind === 'processes'
@@ -507,47 +577,71 @@ function viewTable(kind) {
         ? `<div class="note info">RamScope utilise le même mécanisme que le Gestionnaire des tâches : l’entrée n’est <b>pas supprimée</b>, seulement désactivée. Tu peux la réactiver ici ou dans Windows.</div>`
         : `<div class="note info">Désactiver une tâche est réversible. Les tâches de maintenance (SSD, restauration, Defender) sont classées « à garder ».</div>`;
   return note + `<div class="tablewrap"><table><thead><tr><th style="width:34px"></th>${head}</tr></thead>
-    <tbody>${body || `<tr><td colspan="9" class="empty">Aucun élément ne correspond aux filtres.</td></tr>`}</tbody></table></div>
+    <tbody>${body || `<tr><td colspan="${COLS[kind].length + 1}" class="empty">Aucun élément ne correspond aux filtres.</td></tr>`}</tbody></table></div>
     <p class="sub" style="margin-top:8px">${rows.length} élément(s) affiché(s) sur ${allItems(kind).length}</p>`;
 }
 
+function currentState(kind, it) {
+  const lock = it.advice.locked ? ' · verrouillé' : '';
+  if (kind === 'processes') return `PID ${it.pid} · ${it.has_window ? 'fenêtre ouverte' : 'sans fenêtre'} · ${it.category}${lock}`;
+  if (kind === 'services') return `${it.state} · démarrage ${startLabel(it.start)}${lock}`;
+  if (kind === 'startup') return `${it.enabled ? 'activé' : 'désactivé'} · ${it.location}`;
+  return `${it.enabled ? 'active' : 'désactivée'} · ${(it.triggers || []).join(', ') || 'sans déclencheur'}`;
+}
+function reversibility(it) {
+  const a = it.advice.action;
+  if (!a) return 'Aucune action proposée';
+  if (a.kind === 'kill') return 'Irrréversible — le travail non enregistré sera perdu';
+  if (a.kind === 'stop_service') return 'Partiel — le service peut redémarrer, mais son état et son cache sont perdus';
+  return 'Réversible via le point de restauration';
+}
 function detailBox(kind, it) {
   const f = [];
-  const add = (k, v) => { if (v) f.push(`<div><span>${k}</span><p class="mono">${esc(v)}</p></div>`); };
+  const add = (k, v) => { if (v !== undefined && v !== null && String(v).trim()) f.push(`<div><span>${esc(k)}</span><p class="mono">${esc(v)}</p></div>`); };
+  const addText = (k, v) => { if (v) f.push(`<div><span>${esc(k)}</span><p>${esc(v)}</p></div>`); };
+  const addHtml = (k, v) => { if (v) f.push(`<div><span>${esc(k)}</span><p>${v}</p></div>`); };
+
+  const source = kind === 'processes' ? it.path : kind === 'services' ? it.path : kind === 'startup' ? it.command : it.path;
+  add('Source détectée', source || (it.name || ''));
+  if (kind === 'services' && it.dll) add('DLL de service', it.dll);
+  addText('État actuel', currentState(kind, it));
+  addHtml('Effet tout de suite', it.advice.action ? gainText(it.advice.gain) : 'Aucun changement');
+  addHtml('Effet au prochain démarrage', it.advice.action ? gainText(it.advice.gain_next_boot) : 'Aucun changement');
+  addText('Réversibilité', reversibility(it));
+  addText('Justification', it.advice.reason);
+
   if (kind === 'processes') {
-    add('Chemin', it.path); add('Éditeur', it.company); add('Description', it.description);
+    addText('Éditeur', it.company); addText('Description', it.description);
     add('PID / parent', it.pid + ' / ' + it.ppid); add('Threads', it.threads);
     add('Services hébergés', (it.services || []).join(', '));
     add('RAM partagée', fmt(Math.max(0, it.working_set - it.private)));
   } else if (kind === 'services') {
-    add('Nom court', it.name); add('Commande', it.path); add('DLL de service', it.dll);
-    add('Compte', it.account); add('PID hôte', it.pid || '—');
+    add('Nom court', it.name); addText('Compte', it.account); add('PID hôte', it.pid || '—');
     add('RAM de l’hôte', fmt(it.host_ram) + (it.host_shared > 1 ? ` (partagé entre ${it.host_shared} services)` : ''));
-    add('Description Windows', it.description);
+    addText('Description Windows', it.description);
   } else if (kind === 'startup') {
-    add('Identifiant', it.id); add('Commande', it.command); add('Emplacement', it.location);
+    add('Identifiant', it.id); addText('Emplacement', it.location);
   } else {
-    add('Chemin complet', it.path); add('Programme', it.command); add('Auteur', it.author);
-    add('Description', it.description); add('Déclencheurs', (it.triggers || []).join(', '));
+    add('Chemin complet', it.path); addText('Programme', it.command); addText('Auteur', it.author);
+    addText('Description', it.description); addText('Déclencheurs', (it.triggers || []).join(', '));
   }
-  f.push(`<div style="grid-column:1/-1"><span>Pourquoi ce verdict</span><p>${esc(it.advice.reason)}</p></div>`);
   return `<div class="detailbox">${f.join('')}</div>`;
 }
 
 function bindTable(kind) {
-  $$('#view thead th[data-sort]').forEach(th => th.onclick = () => {
-    const k = th.dataset.sort;
-    if (['cat', 'loc', 'trig', 'why', 'act'].includes(k)) return;
-    const s = sort[kind];
-    if (s.k === k) s.d *= -1; else { s.k = k; s.d = (k === 'name' || k === 'level') ? 1 : -1; }
-    renderView();
+  $$('#view thead th[data-sort]').forEach(th => {
+    const activate = () => {
+      const k = th.dataset.sort;
+      if (['cat', 'loc', 'trig', 'act'].includes(k)) return;
+      const s = sort[kind];
+      if (s.k === k) s.d *= -1; else { s.k = k; s.d = (k === 'name' || k === 'level') ? 1 : -1; }
+      renderView();
+    };
+    th.onclick = activate;
+    th.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } };
   });
   bindChecks();
-  $$('#view [data-exp]').forEach(b => b.onclick = () => {
-    const k = b.dataset.exp;
-    if (expanded.has(k)) expanded.delete(k); else expanded.add(k);
-    renderView();
-  });
+  bindDetails();
   $$('#view [data-do]').forEach(b => b.onclick = () => {
     const kind = b.dataset.do, it = findItem(kind, b.dataset.id);
     if (!it) return;
@@ -566,9 +660,9 @@ function renderActionBar() {
   const t = selTotals();
   $('#selCount').textContent = n + ' sélectionné' + (n > 1 ? 's' : '');
   const parts = [];
-  if (t.now) parts.push(`<b>${fmt(t.now)}</b> tout de suite`);
-  if (t.boot) parts.push(`<b>${fmt(t.boot)}</b> au prochain démarrage`);
-  $('#selGain').innerHTML = parts.length ? 'Gain estimé : ' + parts.join(' · ') : 'Gain estimé : non chiffrable (tâches planifiées)';
+  if (gainBytes(t.now)) parts.push(`<b>${fmt(t.now.bytes)}</b> ${gainNatureBadge(t.now)} Tout de suite`);
+  if (gainBytes(t.boot)) parts.push(`<b>${fmt(t.boot.bytes)}</b> ${gainNatureBadge(t.boot)} Au prochain démarrage`);
+  $('#selGain').innerHTML = parts.length ? 'Gain : ' + parts.join(' · ') : 'Gain : non chiffrable';
   $('#stopNowWrap').style.display = Array.from(sel.values()).some(e => e.kind === 'services' && e.running) ? '' : 'none';
 }
 
@@ -595,24 +689,37 @@ function describeAction(a) {
   return JSON.stringify(a);
 }
 
+function actionNote(a) {
+  if (a.kind === 'kill') return 'Irrréversible : travail non enregistré perdu, aucune annulation.';
+  if (a.kind === 'stop_service') return 'Partiel : le service peut redémarrer, mais son état et son cache sont perdus.';
+  return 'Réversible via le point de restauration.';
+}
 function confirmApply(entries, danger) {
   if (!S.meta.is_admin) { toast('Droits administrateur requis. Clique sur « Passer en administrateur ».', 'ko'); return; }
+  if (entries.some(e => e.kind === 'processes') && entries.length > 1) {
+    toast('Une terminaison de processus ne peut pas être appliquée dans un lot : traite-la seule, ligne par ligne.', 'ko');
+    return;
+  }
   const acts = buildActions(entries);
-  const t = entries.reduce((a, e) => ({ now: a.now + e.gain, boot: a.boot + e.boot }), { now: 0, boot: 0 });
-  const stopNow = $('#stopNow') && $('#stopNow').checked;
-  if (stopNow) { t.now += entries.filter(e => e.kind === 'services' && e.running).reduce((a, e) => a + e.boot, 0); t.boot = 0; }
+  const t = aggregateGains(entries);
   const kills = entries.filter(e => e.kind === 'processes').length;
+  const irreversible = acts.filter(a => a.kind === 'kill').length;
+  const reversible = acts.length - irreversible;
+  const killNames = entries.filter(e => e.kind === 'processes').map(e => e.name).join(', ');
   openModal(`
     <header><h2>Confirmer ${acts.length} changement${acts.length > 1 ? 's' : ''}</h2>
-      <p>Rien n’est supprimé. Un point de restauration est créé automatiquement avant l’application.</p></header>
+      <p><b>${reversible}</b> action${reversible > 1 ? 's' : ''} réversible${reversible > 1 ? 's' : ''} · <b>${irreversible}</b> irréversible${irreversible > 1 ? 's' : ''}</p></header>
     <div class="body">
-      ${kills ? `<div class="note">⚠️ ${kills} processus vont être <b>terminés</b> : le travail non enregistré dans ces programmes sera perdu. Cette action n’est pas réversible (il faut relancer le programme).</div>` : ''}
+      ${kills ? `<div class="note">⚠️ ${kills} processus ${kills > 1 ? 'vont' : 'va'} être <b>terminé${kills > 1 ? 's' : ''}</b> : <b>${esc(killNames)}</b>. Le travail non enregistré dans ${kills > 1 ? 'ces programmes' : 'ce programme'} sera perdu. Cette action n’est pas réversible (il faut relancer le programme).</div>` : '<div class="note good">Aucun processus n’est terminé. Un point de restauration est créé automatiquement avant l’application des changements réversibles.</div>'}
       <ul class="changelist">
         ${acts.map(a => `<li class="${a.kind === 'kill' ? 'kill' : ''}">
           <span class="ic">${a.kind === 'kill' ? '⚠️' : a.kind === 'stop_service' ? '⏹' : '→'}</span>
-          <div><b>${esc(describeAction(a))}</b></div></li>`).join('')}
+          <div><b>${esc(describeAction(a))}</b>${a.kind === 'kill' ? ' <span class="tag bad">irréversible</span>' : ''}<div class="m">${esc(actionNote(a))}</div></div></li>`).join('')}
       </ul>
-      <div class="note good" style="margin-top:14px">Gain estimé : <b>${fmt(t.now)}</b> immédiatement${t.boot ? ` · <b>${fmt(t.boot)}</b> au prochain démarrage` : ''}.</div>
+      <div class="note good" style="margin-top:14px">
+        <div>Tout de suite : <b>${gainText(t.now)}</b></div>
+        <div>Au prochain démarrage : <b>${gainText(t.boot)}</b></div>
+      </div>
     </div>
     <footer>
       <button class="btn ghost" data-close>Annuler</button>
@@ -643,8 +750,9 @@ function showResults(r, isRestore) {
       ${r.results.map(x => `<li><span class="ic ${x.ok ? 'res-ok' : 'res-ko'}">${x.ok ? '✔' : '✖'}</span>
         <div><b>${esc(x.label)}</b><div class="m">${esc(x.message)}</div></div></li>`).join('')}
     </ul>
+    ${r.memory ? `<div class="note info" style="margin-top:14px">Mémoire disponible mesurée : <b>${fmt(r.memory.available_before)}</b> → <b>${fmt(r.memory.available_after)}</b> (${r.memory.available_after >= r.memory.available_before ? '+' : '−'}${fmt(Math.abs(r.memory.available_after - r.memory.available_before))}, ${gainNature(r.memory.gain)}). C’est une mesure après coup, pas une estimation.</div>` : ''}
     ${ko.length && !isRestore ? `<div class="note" style="margin-top:14px">Certains éléments ont refusé la modification (service protégé par Windows, droits insuffisants, tâche verrouillée). C’est normal et sans danger : rien n’a été forcé.</div>` : ''}
-    ${!isRestore && ok ? `<div class="note info" style="margin-top:14px">Les services passés en manuel libéreront leur mémoire au prochain redémarrage. Pense à redémarrer pour constater le gain.</div>` : ''}
+    ${!isRestore && ok ? `<div class="note info" style="margin-top:14px">Un service reconfiguré (manuel ou désactivé) ne libère sa part qu’au prochain redémarrage, et seulement si tous les services de son hôte sont concernés. Pense à redémarrer pour constater le gain.</div>` : ''}
     </div>
     <footer><button class="btn primary" data-close>Terminé</button></footer>`);
   if (ok) toast(`${ok} changement(s) appliqué(s).`, 'ok');
@@ -688,16 +796,33 @@ document.addEventListener('click', ev => {
 });
 
 /* ------------------------------------------------------------------ modale */
+let lastFocus = null;
 function openModal(html) {
+  lastFocus = document.activeElement;
   $('#modal').innerHTML = html;
   $('#mask').classList.add('show');
   $$('#modal [data-close]').forEach(b => b.onclick = closeModal);
+  const first = $('#modal button, #modal input, #modal [href]');
+  if (first) first.focus();
 }
-function closeModal() { $('#mask').classList.remove('show'); }
-$('#mask').onclick = e => { if (e.target === $('#mask')) closeModal(); };
+function closeModal() {
+  const wasOpen = $('#mask').classList.contains('show');
+  $('#mask').classList.remove('show');
+  if (wasOpen && lastFocus && lastFocus.focus) lastFocus.focus();
+  lastFocus = null;
+}
+// Un clic peut changer de cible entre l’appui et le relâchement quand une modale
+// s’ouvre après un appel réseau (export) : seul un appui commencé sur le fond
+// ferme la modale, jamais un clic hérité du bouton qui l’a ouverte.
+let maskPressed = false;
+$('#mask').addEventListener('pointerdown', e => { maskPressed = e.target === $('#mask'); });
+$('#mask').addEventListener('click', e => {
+  if (maskPressed && e.target === $('#mask')) closeModal();
+  maskPressed = false;
+});
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
-  if (e.key === '/' && !/input|textarea/i.test(document.activeElement.tagName)) {
+  if (e.key === 'Escape' && $('#mask').classList.contains('show')) closeModal();
+  if (e.key === '/' && !$('#mask').classList.contains('show') && !/input|textarea/i.test(document.activeElement.tagName)) {
     const i = $('#q'); if (i) { e.preventDefault(); i.focus(); }
   }
 });

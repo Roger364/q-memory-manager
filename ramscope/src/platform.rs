@@ -48,6 +48,22 @@ impl Backend {
         }
     }
 
+    /// Mémoire disponible maintenant, mesurée sur la machine réelle ou dans
+    /// l'état simulé. Sert au delta avant/après d'un arrêt immédiat.
+    pub fn available_memory(&self) -> u64 {
+        if self.demo {
+            return self.state.lock().unwrap().snapshot().memory.available;
+        }
+        #[cfg(windows)]
+        {
+            crate::win::memory_available()
+        }
+        #[cfg(not(windows))]
+        {
+            self.state.lock().unwrap().snapshot().memory.available
+        }
+    }
+
     pub fn is_admin(&self) -> bool {
         if self.demo {
             return true;
