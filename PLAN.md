@@ -700,14 +700,14 @@ Rappel : aucune de ces commandes ne doit être présentée comme exécutée avan
 
 ## 11. Correction documentaire et synchronisation (2026-11-14)
 
-La revue WorkBuddy a été rédigée sur `d08e412`, puis commitée sous `ecccadc`. Elle signalait à juste titre que `PLAN.md` citait un ancien remote erroné, un décompte de tests inversé et un push non effectué. Les vérifications suivantes ont été exécutées :
+La revue WorkBuddy a été rédigée sur `d08e412`, puis commitée sous `ecccadc`. Elle signalait à juste titre que `PLAN.md` citait un ancien remote erroné, un décompte de tests inversé et un push non effectué. Les vérifications de synchronisation suivantes ont été exécutées ; le décompte des tests est repris du journal 7.12 et recoupé par la revue :
 
 | Commande / contrôle | Code retour | Observation |
 |---|---|---|
 | `git remote -v` | 0 | `origin` = `https://github.com/Roger364/q-memory-manager.git` |
 | `git ls-remote origin HEAD` | 0 | `03bed3e` avant le push du lot 9 |
-| `gh repo view <ancien-dépôt>` | 1 | `404 Not Found` : l'ancien dépôt n'existe plus |
-| Recherche de l'ancienne URL dans `.git` | 1 | aucune trace dans la configuration ou les références Git |
-| `cargo test -- --list` (dans `ramscope/`) | 0 | 43 tests : 13 dans `plan.rs`, 12 dans `rules.rs` |
+| Consultation de l'ancienne URL via `gh` | 1 | `404 Not Found` : l'ancien dépôt n'existe plus |
+| Recherche de l'ancienne URL dans `.git` | — | aucune trace dans la configuration ou les références Git |
+| Comptage des tests (journal 7.12, recoupé par la revue) | — | 43 tests : 13 dans `plan.rs`, 12 dans `rules.rs` |
 
 La version du plan est corrigée en **3.2**, le décompte des tests est remis dans le bon ordre, et les mentions de l'ancien dépôt ont été retirées de la documentation. Le plan d'améliorations proposé est séparé dans `PLAN-LOT9.md` pour ne pas mélanger le journal historique et le travail à venir. Le push du lot 9 clôt cette correction en fast-forward.
