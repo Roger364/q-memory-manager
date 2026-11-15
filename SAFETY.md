@@ -71,7 +71,7 @@ Conséquences dans cette version :
 
 ## Droits et surface locale
 
-- Le lancement par défaut ne demande **pas** l'élévation UAC : RamScope démarre en lecture seule et propose « Passer en administrateur » dans l'interface. L'UAC n'est demandé qu'après ce clic, ou au lancement avec `--admin`.
+- Le lancement par défaut ne demande **pas** l'élévation UAC. S'il n'est pas déjà élevé, RamScope démarre en lecture seule et propose « Passer en administrateur » dans l'interface ; depuis un terminal déjà administrateur, la session reste élevée. L'UAC n'est demandé qu'après ce clic, ou au lancement avec `--admin`.
 - `--no-admin` est strict pour l'élévation : le bouton est masqué et `/api/elevate` répond `403`. Il ne transforme pas une session déjà élevée en session non administrateur ; ne pas lancer `--no-admin` depuis un terminal administrateur si l'on veut garantir un audit sans droits.
 - Une fois l'instance élevée, elle reste administrateur jusqu'à sa fermeture. La réduction structurelle de cette durée (helper one-shot) n'est pas implémentée ; elle est prévue dans le lot séparé D9-2b.
 - L'interface écoute uniquement sur la boucle locale ; toute autre adresse passée à `--host` est refusée au démarrage. Avec `--host localhost`, la liaison suit la résolution locale (souvent `::1`) : l'alias `127.0.0.1` n'est pas garanti ; utiliser l'adresse affichée au démarrage.

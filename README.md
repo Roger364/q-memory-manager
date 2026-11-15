@@ -20,9 +20,9 @@ Le binaire est produit dans `ramscope\target\release\ramscope.exe`.
 ## Lancer
 
 ```text
-ramscope.exe                 # collecte réelle, lecture seule ; élévation proposée dans l'interface
+ramscope.exe                 # collecte réelle ; lecture seule si le processus n'est pas déjà élevé
 ramscope.exe --admin         # collecte réelle, élévation UAC au lancement
-ramscope.exe --no-admin      # lecture seule stricte, sans aucune élévation
+ramscope.exe --no-admin      # aucune élévation demandée ; ne rétrograde pas une session déjà élevée
 ramscope.exe --demo          # données simulées, aucun accès à la machine
 ```
 
@@ -31,12 +31,12 @@ ramscope.exe --demo          # données simulées, aucun accès à la machine
 | `--port N` | port d'écoute (8765 par défaut, essaie les 11 suivants s'il est occupé) |
 | `--host ADRESSE` | adresse d'écoute : `127.0.0.1` (défaut) ou `localhost` ; toute autre valeur est refusée au démarrage. `localhost` se lie à la résolution locale (souvent `::1`) : l'alias `127.0.0.1` n'est pas garanti |
 | `--no-browser` | ne pas ouvrir la fenêtre automatiquement |
-| `--admin` | demander l'élévation UAC au lancement |
-| `--no-admin` | lecture seule stricte : interdit l'élévation, y compris depuis l'interface |
+| `--admin` | demander l'élévation UAC au lancement, hors `--demo` |
+| `--no-admin` | interdit toute demande d'élévation, y compris depuis l'interface ; ne rétrograde pas une session déjà élevée |
 | `--demo` | données de démonstration, aucun accès réel |
 | `--help` | aide |
 
-Sans option, RamScope démarre en lecture seule et ne demande pas l'UAC. L'inventaire reste consultable ; pour appliquer un changement, clique sur « Passer en administrateur » et accepte l'UAC, ou relance avec `--admin`. `--no-admin` désactive cette demande : le bouton est masqué et `/api/elevate` répond `403`. Un refus UAC lors de `--admin` laisse la session courante en lecture seule.
+Sans option, RamScope ne demande pas l'UAC. S'il n'est pas déjà élevé, il démarre en lecture seule : l'inventaire reste consultable, et pour appliquer un changement il faut cliquer sur « Passer en administrateur » et accepter l'UAC, ou relancer avec `--admin`. Depuis un terminal déjà administrateur, la session reste élevée. `--no-admin` désactive toute demande d'élévation : le bouton est masqué et `/api/elevate` répond `403` ; il ne rétrograde pas non plus une session déjà élevée. Un refus UAC lors de `--admin` laisse la session courante en lecture seule.
 
 ## Lire les chiffres
 

@@ -714,14 +714,14 @@ La version du plan est corrigée en **3.2**, le décompte des tests est remis da
 
 ## 12. D9-2a — réduction de l'élévation UAC (2026-11-15)
 
-**Changement.** Le lancement sans option démarre en lecture seule et ne demande plus l'UAC. `--admin` demande l'élévation au lancement ; `--no-admin` est strict (bouton masqué et `/api/elevate` en `403`). La relance retire `--admin` et `--no-admin`, ajoute un seul `--elevated`, et le serveur expose `can_elevate` dans le snapshot et `/api/health`. Le consentement UAC a été testé sur un compte standard dans un Windows Sandbox de test le 2026-11-15 (voir les lignes UAC et route du bouton ci-dessous) ; le Sandbox C6, lui, reste administrateur.
+**Changement.** Le lancement sans option ne demande plus l'UAC ; s'il n'est pas déjà élevé, il démarre en lecture seule. `--admin` demande l'élévation au lancement ; `--no-admin` est strict pour l'élévation (bouton masqué et `/api/elevate` en `403`) et ne rétrograde pas une session déjà élevée. La relance retire `--admin` et `--no-admin`, ajoute un seul `--elevated`, et le serveur expose `can_elevate` dans le snapshot et `/api/health`. Le consentement UAC a été testé sur un compte standard dans un Windows Sandbox de test le 2026-11-15 (voir les lignes UAC et route du bouton ci-dessous) ; le Sandbox C6, lui, reste administrateur.
 
 **Défaut découvert et corrigé.** La relance élevée depuis `/api/elevate`, pendant que le serveur lecture seule écoute encore, se rabattait sur le port suivant (8899 au lieu de 8898) : l'ancienne page et le nouveau serveur n'étaient plus sur le même port. `main.rs` réessaie désormais le port demandé pendant 5 s pour une instance `--elevated` avant de changer de port. Le test d'endpoint ci-dessous valide ce comportement après rebuild.
 
 | Commande / contrôle | Code retour | Observation |
 |---|---:|---|
 | `cargo fmt --check` (depuis `ramscope/`) | 0 | formatage conforme |
-| `cargo test` | 0 | 68 tests, 68 réussis |
+| `cargo test` | 0 | 68 tests au moment du lot, 68 réussis |
 | `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
 | `cargo build --release` | 0 | binaire produit |
 | `ramscope.exe --help` | 0 | `--admin` et `--no-admin` documentés |

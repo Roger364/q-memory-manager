@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5 ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1 et C8–C15 restent à traiter ; C3/C4/C5 sont corrigés. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -32,12 +32,12 @@ Je ne reprends pas son ordre tel quel :
 | Constat | Verdict | Destination | Effet sur le plan |
 |---|---|---|---|
 | C1 — provenance morte et audit figé | Confirmé, nouveau | 9.6 | Ajout d'un chantier distinct, critère de sortie avant distribution |
-| C2 — API locale élevée et état fourni par le client | Confirmé, déjà connu | 9.3 | Précision sur `from`, `was_enabled`, le jeton et le canal local |
+| C2 — API locale élevée et état fourni par le client | Corrigé le 2026-11-15 | 9.3 | Précision sur `from`, `was_enabled`, le jeton et le canal local |
 | C3 — origine optionnelle | Corrigé le 2026-11-15 | 9.4 | `Origin` obligatoire, tests nommés |
 | C4 — corps non borné | Corrigé le 2026-11-15 | 9.4 | 1 Mio avant lecture puis lecture bornée |
 | C5 — verrous non indépendants | Corrigé le 2026-11-15 | 9.5 | Garde moteur services/processus ; limites startup/tâche documentées |
-| C6 — options CLI perdues à l'élévation | Confirmé, déjà connu | 9.2 | Inchangé, test d'arguments |
-| C7 — chemins système via l'environnement | Confirmé, déjà connu | 9.1 | Inchangé, priorité sécurité |
+| C6 — options CLI perdues à l'élévation | Corrigé le 2026-11-14 | 9.2 | Options conservées, test d'arguments |
+| C7 — chemins système via l'environnement | Corrigé le 2026-11-14 | 9.1 | Chemins système absolus |
 | C8 — tests sur le texte source | Confirmé, nouveau | 9.9 | Chantier dédié, distinct de la CI |
 | C9 — `extract_exe` et Unicode | Confirmé, déjà connu | 9.8 | Inchangé |
 | C10 — arrêt brutal avec threads actifs | Confirmé, déjà connu | 9.8 | Inchangé |
@@ -74,7 +74,7 @@ Conséquences retenues pour la v1 :
 
 ### D9-2 — Conserver l'élévation UAC par défaut ?
 
-**Décision validée le 2026-11-15 (option A) et implémentée :** ne plus élever au lancement par défaut. Le lancement normal devient une session de lecture seule ; l'utilisateur demande explicitement l'élévation depuis l'interface après avoir consulté l'inventaire. Un nouveau `--admin` permet l'élévation au lancement pour ceux qui la veulent dès le départ, et `--no-admin` devient un mode strict qui interdit toute élévation ultérieure.
+**Décision validée le 2026-11-15 (option A) et implémentée :** ne plus élever au lancement par défaut. Le lancement normal devient une session de lecture seule s'il n'est pas déjà élevé ; l'utilisateur demande explicitement l'élévation depuis l'interface après avoir consulté l'inventaire. Un nouveau `--admin` permet l'élévation au lancement pour ceux qui la veulent dès le départ, et `--no-admin` devient un mode strict qui interdit toute élévation ultérieure.
 
 Cette étape réduit la durée d'exposition avant l'UAC, pas encore la durée de la session élevée. Un helper d'application one-shot, qui ne garderait les droits administrateur que quelques secondes, reste un lot séparé (D9-2b) : il touche au canal local et à l'authentification, et ne doit pas être mélangé à C2/D9-1. Le détail du lot est en **9.11** ; le test UAC sur compte standard a été exécuté le 2026-11-15.
 
@@ -373,9 +373,9 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 ### 9.11 — Réduction de l'élévation UAC : D9-2a
 
-**État :** implémenté le 2026-11-15, tests unitaires au vert (68 tests). Le consentement UAC sur un compte standard a été testé le 2026-11-15 : acceptation et annulation réelles, avec `admin:true` après acceptation et `admin:false` / `can_elevate:true` après annulation. La route `POST /api/elevate` du bouton a aussi été testée ; elle a révélé puis fait corriger le conflit de port de la relance élevée. Le clic DOM et le rechargement de la page ont été validés avec Chrome for Testing portable : Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722).
+**État :** implémenté le 2026-11-15, tests unitaires au vert (68 tests au moment du lot, 75 après C3/C4/C5). Le consentement UAC sur un compte standard a été testé le 2026-11-15 : acceptation et annulation réelles, avec `admin:true` après acceptation et `admin:false` / `can_elevate:true` après annulation. La route `POST /api/elevate` du bouton a aussi été testée ; elle a révélé puis fait corriger le conflit de port de la relance élevée. Le clic DOM et le rechargement de la page ont été validés avec Chrome for Testing portable : Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722).
 
-**Décision validée le 2026-11-15 (option A).** Le lancement sans option devient une session de **lecture seule** ; l'élévation n'est demandée qu'après une action explicite de l'utilisateur.
+**Décision validée le 2026-11-15 (option A).** Le lancement sans option devient une session de **lecture seule s'il n'est pas déjà élevé** ; l'élévation n'est demandée qu'après une action explicite de l'utilisateur.
 
 **Alternatives examinées.**
 - **A. Lecture seule par défaut + `--admin` (recommandée).** Réduit l'exposition initiale, garde un parcours simple pour appliquer après revue, et laisse un mode strict pour l'audit.
@@ -595,13 +595,13 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 8. Critères de sortie du lot 9
 
-- [x] Les 43 tests historiques passent toujours ; les 68 tests actuels passent.
+- [x] Les 43 tests historiques passent toujours ; les 75 tests actuels passent.
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
 - [x] La CI est verte sur `c9771fc` : run Windows `43663058587`, toutes les étapes au vert.
-- [ ] C1 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
-- [ ] C3–C6 et C14 sont corrigés ou explicitement acceptés dans `SAFETY.md`.
+- [x] C7 est corrigé ou explicitement documenté comme hors modèle de menace ; C1 reste ouvert.
+- [x] C3–C6 sont corrigés ou explicitement acceptés dans `SAFETY.md` ; C14 reste ouvert.
 - [ ] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
@@ -618,7 +618,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - Refonte de l'interface ou changement de framework front.
 - Remplacement complet de HTTP par un canal local dédié, sauf décision explicite après 9.3.
 - Nouvelles règles métier ou nouvelle base de règles.
-- Signature de code, installeur, distribution publique tant que C1/C2/C7/C15 ne sont pas traités.
+- Signature de code, installeur, distribution publique tant que C1/C15 ne sont pas traités.
 - Télémétrie, collecte distante ou nettoyage automatique.
 
 ## 10. Risques et parades
@@ -642,9 +642,9 @@ La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_s
 
 Ordre recommandé pour la suite :
 1. **D9-2b — helper elevated one-shot** (conception en **9.12**) : valider les décisions ouvertes, puis implémenter le canal local, l'authentification, la durée de vie et les tests de réversion. Ne pas le mélanger à D9-1 ni à C2.
-2. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
+2. **C1/C14** : provenance réelle des règles et distinction du zéro mesuré, avant toute distribution publique.
 3. **C9–C13** : robustesse et finitions, avec tests ciblés.
-4. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
+4. **C8/C15** : tests comportementaux restants et décision de licence.
 5. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.

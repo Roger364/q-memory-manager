@@ -197,13 +197,15 @@ Usage : ramscope.exe [options]
                   localhost se lie à la résolution locale ; l'alias 127.0.0.1
                   n'est pas garanti
   --no-browser    ne pas ouvrir la fenêtre automatiquement
-  --admin         demander l'élévation UAC au lancement
-  --no-admin      lecture seule stricte (interdit toute élévation)
+  --admin         demander l'élévation UAC au lancement (hors --demo)
+  --no-admin      interdit toute demande d'élévation (ne rétrograde pas
+                  une session déjà élevée)
   --demo          données de démonstration (aucun accès à la machine)
   --help          cette aide
 
-Sans option, RamScope démarre en lecture seule sans UAC ; l'élévation est
-demandée depuis l'interface après consultation de l'inventaire. L'interface
+Sans option, RamScope ne demande pas l'UAC ; s'il n'est pas déjà élevé, il
+démarre en lecture seule. L'élévation est demandée depuis l'interface après
+consultation de l'inventaire. L'interface
 s'ouvre dans une fenêtre d'application. Les changements de configuration sont
 réversibles (point de restauration) ; la terminaison d'un processus ne l'est
 pas et n'est jamais annulée par ce point.",
