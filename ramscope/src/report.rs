@@ -10,7 +10,7 @@ fn esc(s: &str) -> String {
 }
 
 fn gain_text(g: &Gain) -> String {
-    if g.bytes == 0 || g.nature == GainNature::Unavailable {
+    if g.nature == GainNature::Unavailable {
         "non chiffrable".to_string()
     } else {
         format!("{} ({})", fmt_bytes(g.bytes), g.nature.label())
@@ -214,6 +214,24 @@ mod tests {
         let interdit = format!("Rien à optimiser {} risque", "sans");
         assert!(!h.contains(&interdit));
         assert!(!h.contains("Gain</th>"));
+    }
+
+    #[test]
+    fn un_zero_mesure_reste_mesure_dans_le_rapport() {
+        let zero = Gain::measured(0, GainScope::Private);
+        assert_eq!(gain_text(&zero), "0 Mo (mesuré)");
+        let mut s = crate::demo::DemoState::default().snapshot();
+        s.plan_gain = zero;
+        let h = build(&s);
+        assert!(
+            h.contains("0 Mo (mesuré)"),
+            "le zéro mesuré doit rester mesuré dans le rapport exporté"
+        );
+        assert_eq!(
+            gain_text(&Gain::estimated(0, GainScope::Private)),
+            "non chiffrable"
+        );
+        assert_eq!(gain_text(&Gain::unavailable()), "non chiffrable");
     }
 
     #[test]

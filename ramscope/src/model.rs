@@ -126,13 +126,23 @@ impl Gain {
     }
 
     /// Additionne un gain à un total. Un gain indisponible n'ajoute rien.
+    ///
+    /// Un zéro mesuré est une observation valide : il peut initialiser un
+    /// total vide ou confirmer une mesure, mais il ne transforme pas un total
+    /// estimé en mesure. Un zéro estimé reste indisponible.
     pub fn merge(&mut self, other: &Gain) {
-        if other.bytes == 0 || other.nature == GainNature::Unavailable {
+        if other.nature == GainNature::Unavailable {
             return;
         }
-        if self.bytes == 0 {
+        if other.nature == GainNature::Estimated && other.bytes == 0 {
+            return;
+        }
+        if self.nature == GainNature::Unavailable {
             *self = *other;
             self.additive = false;
+            return;
+        }
+        if other.bytes == 0 {
             return;
         }
         self.bytes = self.bytes.saturating_add(other.bytes);
@@ -474,4 +484,34 @@ pub struct ApplyResponse {
     /// Mesure disponible/après uniquement quand un arrêt immédiat a été demandé.
     #[serde(default)]
     pub memory: Option<MemoryDelta>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn un_zero_mesure_survit_au_merge() {
+        let mut total = Gain::unavailable();
+        total.merge(&Gain::measured(0, GainScope::Private));
+        assert_eq!(total.nature, GainNature::Measured);
+        assert_eq!(total.bytes, 0);
+
+        let mut mesure = Gain::measured(0, GainScope::Private);
+        mesure.merge(&Gain::measured(4 * 1024 * 1024, GainScope::Private));
+        assert_eq!(mesure.nature, GainNature::Measured);
+        assert_eq!(mesure.bytes, 4 * 1024 * 1024);
+    }
+
+    #[test]
+    fn un_zero_estime_reste_indisponible() {
+        let zero = Gain::estimated(0, GainScope::Private);
+        assert_eq!(zero.nature, GainNature::Unavailable);
+        assert_eq!(zero.bytes, 0);
+
+        let mut total = Gain::estimated(10, GainScope::Private);
+        total.merge(&zero);
+        assert_eq!(total.nature, GainNature::Estimated);
+        assert_eq!(total.bytes, 10);
+    }
 }

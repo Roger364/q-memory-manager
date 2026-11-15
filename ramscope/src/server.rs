@@ -804,6 +804,23 @@ mod tests {
     }
 
     #[test]
+    fn un_zero_mesure_reste_mesure_dans_le_rendu_js() {
+        let js = include_str!("web/app.js");
+        assert!(
+            js.contains("function gainKnown(g) { return !!g && g.nature !== 'unavailable'; }"),
+            "le rendu JS doit distinguer une nature absente d’un zéro mesuré"
+        );
+        assert!(
+            js.contains("return gainKnown(g) ? `${fmt(gainBytes(g))} ${gainNatureBadge(g)}` : 'non chiffrable';"),
+            "gainText ne doit plus décider à partir de bytes == 0"
+        );
+        assert!(
+            js.contains("if (!gainKnown(g)) return 'non chiffrable';"),
+            "gainLine ne doit plus décider à partir de bytes == 0"
+        );
+    }
+
+    #[test]
     fn l_interface_ne_convertit_pas_le_gain_differe_en_immediat() {
         let js = include_str!("web/app.js");
         assert!(

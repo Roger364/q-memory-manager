@@ -104,21 +104,26 @@ function startLabel(s) {
 function emptyGain() { return { bytes: 0, nature: 'unavailable', scope: 'private', additive: false }; }
 function gainBytes(g) { return g && g.bytes ? g.bytes : 0; }
 function gainNature(g) { return g && g.nature === 'measured' ? 'mesuré' : g && g.nature === 'estimated' ? 'estimé' : 'non chiffrable'; }
+function gainKnown(g) { return !!g && g.nature !== 'unavailable'; }
 function gainNatureBadge(g) {
   const n = gainNature(g);
   const cls = n === 'mesuré' ? 'measured' : n === 'estimé' ? 'estimated' : 'unavailable';
   return `<span class="nature ${cls}">${n}</span>`;
 }
-function gainText(g) { return gainBytes(g) ? `${fmt(g.bytes)} ${gainNatureBadge(g)}` : 'non chiffrable'; }
+function gainText(g) { return gainKnown(g) ? `${fmt(gainBytes(g))} ${gainNatureBadge(g)}` : 'non chiffrable'; }
 function gainLine(g) {
-  if (!gainBytes(g)) return 'non chiffrable';
+  if (!gainKnown(g)) return 'non chiffrable';
   const part = g.scope === 'host_part' ? ' <span class="sub">part d’hôte</span>' : '';
-  return `${fmt(g.bytes)} ${gainNatureBadge(g)}${part}`;
+  return `${fmt(gainBytes(g))} ${gainNatureBadge(g)}${part}`;
 }
 function addGain(total, g) {
-  if (!gainBytes(g) || g.nature === 'unavailable') return;
-  total.bytes += g.bytes;
-  total.nature = 'estimated';
+  if (!gainKnown(g) || (g.nature === 'estimated' && !gainBytes(g))) return;
+  if (total.nature === 'unavailable') {
+    total.bytes = gainBytes(g); total.nature = g.nature; total.scope = g.scope;
+    return;
+  }
+  total.bytes += gainBytes(g);
+  total.nature = total.nature === 'measured' && g.nature === 'measured' ? 'measured' : 'estimated';
 }
 function provenanceText(a) {
   const source = a && a.source ? String(a.source).trim() : '';
@@ -256,7 +261,7 @@ function renderHero() {
     </div>
     <div class="card gain" title="Estimation, agrégée par hôte : un hôte partagé ne compte que si tous ses services sont inclus">
       <div class="k">Récupérable au prochain démarrage</div>
-      <div class="v">${gainBytes(S.plan_gain_next_boot) ? fmt(gainBytes(S.plan_gain_next_boot)) : 'non chiffrable'}</div>
+      <div class="v">${gainText(S.plan_gain_next_boot)}</div>
       <div class="s">${S.counts.actionable} réglages superflus détectés</div>
     </div>
     <div class="card gain2">
@@ -465,8 +470,8 @@ function viewPlan() {
     const agg = aggregateGains(rows.map(r => entryFor(r.kind, r.it)));
     rowsCount += rows.length;
     const gainTags = [];
-    if (agg.now.bytes) gainTags.push(`<span class="tag">${fmt(agg.now.bytes)} tout de suite ${gainNatureBadge(agg.now)}</span>`);
-    if (agg.boot.bytes) gainTags.push(`<span class="tag">${fmt(agg.boot.bytes)} au prochain démarrage ${gainNatureBadge(agg.boot)}</span>`);
+    if (gainKnown(agg.now)) gainTags.push(`<span class="tag">${fmt(agg.now.bytes)} tout de suite ${gainNatureBadge(agg.now)}</span>`);
+    if (gainKnown(agg.boot)) gainTags.push(`<span class="tag">${fmt(agg.boot.bytes)} au prochain démarrage ${gainNatureBadge(agg.boot)}</span>`);
     const tag = gainTags.length ? gainTags.join(' ') : '<span class="tag">non chiffrable</span>';
     html += `<div class="section">
       <h3><span class="b ${LVL_CLS[lvl]}">${esc(rows[0].it.advice.label)}</span> ${title}
@@ -488,7 +493,7 @@ function viewPlan() {
           <td><div class="name">${esc(it.display || it.name)}</div><div class="sub mono">${esc(it.name !== (it.display || it.name) ? it.name : (it.command || it.path || ''))}</div></td>
           <td><span class="tag">${type}</span>${kind === 'services' ? `<div class="sub">${esc(it.state)} · ${startLabel(it.start)}</div>` : ''}</td>
           <td style="font-size:12.5px">${esc(e.sub)}</td>
-          <td class="num">${gainLine(e.gain)}${gainBytes(e.boot) ? `<div class="sub">au prochain démarrage : ${fmt(e.boot.bytes)} ${gainNatureBadge(e.boot)}</div>` : ''}</td>
+          <td class="num">${gainLine(e.gain)}${gainKnown(e.boot) ? `<div class="sub">au prochain démarrage : ${gainText(e.boot)}</div>` : ''}</td>
           <td><button class="btn sm ghost" data-exp="${esc(dkey)}" aria-expanded="${open}">${open ? 'Masquer' : 'Détails'}</button></td>
         </tr>`;
         const detail = open ? `<tr class="detail"><td colspan="6">${detailBox(kind, it)}</td></tr>` : '';
@@ -681,8 +686,8 @@ function renderActionBar() {
   const t = selTotals();
   $('#selCount').textContent = n + ' sélectionné' + (n > 1 ? 's' : '');
   const parts = [];
-  if (gainBytes(t.now)) parts.push(`<b>${fmt(t.now.bytes)}</b> ${gainNatureBadge(t.now)} Tout de suite`);
-  if (gainBytes(t.boot)) parts.push(`<b>${fmt(t.boot.bytes)}</b> ${gainNatureBadge(t.boot)} Au prochain démarrage`);
+  if (gainKnown(t.now)) parts.push(`<b>${fmt(t.now.bytes)}</b> ${gainNatureBadge(t.now)} Tout de suite`);
+  if (gainKnown(t.boot)) parts.push(`<b>${fmt(t.boot.bytes)}</b> ${gainNatureBadge(t.boot)} Au prochain démarrage`);
   $('#selGain').innerHTML = parts.length ? 'Gain : ' + parts.join(' · ') : 'Gain : non chiffrable';
   $('#stopNowWrap').style.display = Array.from(sel.values()).some(e => e.kind === 'services' && e.running) ? '' : 'none';
 }
