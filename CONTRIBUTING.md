@@ -43,7 +43,7 @@ node --test src/web/core.test.mjs
 - Ne testez jamais une action réelle sur votre machine quotidienne : utilisez
   `--demo` ou un Windows Sandbox jetable.
 - Ne committez pas de secrets, de jetons, de rapports contenant des données
-  personnelles ni le contenu de `sandbox-test/`.
+  personnelles ni le contenu de l'archive `sandbox-test-*.zip`.
 - Ne contournez pas les garde-fous (`Host`, jeton, `Origin`, validation serveur,
   verrous moteur) pour faire passer un test.
 - Pour une vulnérabilité, suivez [`SECURITY.md`](SECURITY.md) au lieu d'ouvrir

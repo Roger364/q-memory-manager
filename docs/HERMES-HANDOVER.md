@@ -25,7 +25,7 @@ RamScope est un outil Windows 10/11 qui inventorie la mémoire, les services, le
 - Branche `main`, dépôt public, GitHub détecte la licence MIT.
 - CI GitHub verte : run `43682552060`, toutes les étapes réussies.
 - Suite locale : **83 tests Rust + 4 tests Node**, tous verts.
-- `sandbox-test/` a été supprimé ; l'archive locale `sandbox-test-2026-11-15.zip` est conservée (117 entrées, 16 Mo, SHA-256 `60547ca05d73470a8298078e2f47ba9c2e26260f1b3ea4e310e8d014fcd64dd9`).
+- Le dossier de preuves a été supprimé ; l'archive locale `sandbox-test-2026-11-15.zip` est conservée (117 entrées, 16 Mo, SHA-256 `60547ca05d73470a8298078e2f47ba9c2e26260f1b3ea4e310e8d014fcd64dd9`).
 - Le Sandbox C6 a été fermé après la suppression.
 - Le fichier `review - workbuddy.md` n'est plus dans l'arbre courant, mais reste dans l'historique Git public.
 
@@ -67,7 +67,7 @@ RamScope est un outil Windows 10/11 qui inventorie la mémoire, les services, le
 | `.github/workflows/ci.yml` | Vérification Windows, Rust, Node, notices et fichiers non suivis. |
 | `docs/evidence/SHA256SUMS` | Sommes des preuves versionnées vérifiées par la CI. |
 
-Les chemins `sandbox-test/...` encore cités dans `README.md` ou `PLAN.md` sont des références historiques : les preuves ne sont plus dans l'arbre courant. Elles restent dans l'archive ZIP locale, ignorée par Git.
+Les preuves historiques ne sont plus dans l'arbre courant ; elles restent dans l'archive ZIP locale, ignorée par Git.
 
 ## 4. Construire, tester, lancer
 
