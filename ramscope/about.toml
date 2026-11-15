@@ -1,0 +1,9 @@
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+]
+
+# Le binaire n'est pas publié sur crates.io ; ses propres notices sont LICENSE.
+private = { ignore = true }

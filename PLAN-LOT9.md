@@ -385,13 +385,13 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 - `LICENSE` MIT à la racine, copyright Bisse Studio.
 - `license = "MIT"` et `repository` dans `ramscope/Cargo.toml`.
 - Badge et section **Open source** dans `README.md`.
-- `THIRD_PARTY_NOTICES.md` : inventaire des 17 crates permissives et liens vers les textes.
+- `THIRD_PARTY_NOTICES.md` : textes intégraux générés par `cargo-about` pour les 17 crates permissives ; `about.toml` et `about.hbs` permettent de le régénérer.
 - `SECURITY.md` : canal privé, périmètre, versions et réduction du risque.
 - `CONTRIBUTING.md` : DCO, licence MIT des contributions, commandes de test et règles de sécurité.
 
-**Reste à faire.** Le push n'a pas été effectué. La CI locale ne peut pas être déclarée verte tant que les fichiers non suivis préexistants (`review - hermes*.md`, `sandbox-test/`) ne sont pas traités : le garde-fou « refuse generated or untracked files » les rejette. Ces fichiers n'ont pas été modifiés ni ajoutés.
+**Reste à faire.** Le push n'a pas été effectué. Les revues Hermes ont été supprimées et `sandbox-test/` est désormais ignoré localement : il reste sur la machine comme archive de test, mais ne sera pas publié. Le garde-fou CI des fichiers non suivis peut donc passer.
 
-**Critère de sortie.** La décision de licence est consignée et appliquée ; la CI reste verte après traitement des fichiers non suivis ; le dépôt distant est synchronisé après accord de Ro.
+**Critère de sortie.** La décision de licence est consignée et appliquée ; la CI reste verte ; le dépôt distant est synchronisé après accord de Ro.
 
 ### 9.11 — Réduction de l'élévation UAC : D9-2a
 

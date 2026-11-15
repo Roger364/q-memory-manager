@@ -115,6 +115,6 @@ Hors Windows, `ramscope-data\` dans le répertoire courant, pour le développeme
 
 RamScope est publié sous licence **MIT** par Bisse Studio. Le code peut être utilisé, modifié et redistribué selon les termes de [`LICENSE`](LICENSE). La licence ne concède ni le nom « RamScope » ni la marque Bisse Studio.
 
-Les contributions sont bienvenues ; lisez [`CONTRIBUTING.md`](CONTRIBUTING.md) avant d'ouvrir une pull request. Pour signaler une vulnérabilité, utilisez la procédure privée décrite dans [`SECURITY.md`](SECURITY.md). Les composants tiers et leurs licences sont inventoriés dans [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Les contributions sont bienvenues ; lisez [`CONTRIBUTING.md`](CONTRIBUTING.md) avant d'ouvrir une pull request. Pour signaler une vulnérabilité, utilisez la procédure privée décrite dans [`SECURITY.md`](SECURITY.md). Les composants tiers et leurs textes de licence sont reproduits dans [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), généré avec `cargo-about`.
 
 Voir `SAFETY.md` pour les limites d'usage et `PLAN.md` pour le plan de travail et les défauts connus.

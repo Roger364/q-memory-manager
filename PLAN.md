@@ -814,7 +814,7 @@ Pour C14, `gain_text` et le rendu JS testent la nature avant la valeur. Un `Gain
 - `LICENSE` : texte MIT standard.
 - `ramscope/Cargo.toml` : `license = "MIT"` et URL du dépôt.
 - `README.md` : badge, section **Open source**, liens vers les documents de contribution et de sécurité.
-- `THIRD_PARTY_NOTICES.md` : inventaire des 17 crates permissives, versions, licences et sources.
+- `THIRD_PARTY_NOTICES.md` : textes intégraux générés par `cargo-about`, avec `about.toml` et `about.hbs` pour la régénération.
 - `SECURITY.md` : canal privé, périmètre, versions maintenues et réduction du risque.
 - `CONTRIBUTING.md` : DCO, contributions sous MIT, commandes de test et règles de sécurité.
 
@@ -831,4 +831,4 @@ Pour C14, `gain_text` et le rendu JS testent la nature avant la valeur. Un `Gain
 | `git grep` des motifs de secrets connus | 1 | aucune correspondance dans les fichiers suivis |
 | `git diff --check` | 0 | aucune erreur d'espacement |
 
-**Limites.** Aucun push n'a été effectué. Le garde-fou CI « refuse generated or untracked files » reste rouge à cause des fichiers non suivis préexistants `review - hermes*.md` et `sandbox-test/`, qui n'ont pas été modifiés ni ajoutés. Le fichier de notices est un inventaire : pour une distribution binaire, joindre les textes intégraux et notices de copyright des crates, par exemple avec `cargo-about`. La page Open Source de `bissestudio.ch` n'est pas dans ce dépôt et reste à publier. La titularité exacte du nom légal et les obligations de consommation suisses/européennes doivent être validées par un avocat avant une diffusion commerciale.
+**Limites.** Aucun push n'a été effectué. Les revues Hermes demandées ont été supprimées ; `sandbox-test/` est conservé localement mais ignoré par Git, donc il ne sera pas publié. Le fichier de notices contient les textes intégraux générés par `cargo-about` ; il doit être régénéré si les dépendances changent. La page Open Source de `bissestudio.ch` n'est pas dans ce dépôt et reste à publier. La titularité exacte du nom légal et les obligations de consommation suisses/européennes doivent être validées par un avocat avant une diffusion commerciale.

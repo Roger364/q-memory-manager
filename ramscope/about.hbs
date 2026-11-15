@@ -1,0 +1,28 @@
+# Third-party notices
+
+RamScope est distribué sous licence MIT. Ce fichier est généré depuis
+`Cargo.lock` avec `cargo-about` ; il recense les crates utilisées et reproduit
+les textes de licence fournis par leurs auteurs.
+
+## Licences utilisées
+
+{{#each overview}}
+- {{name}} — {{count}} composant(s)
+{{/each}}
+
+## Textes et composants
+
+{{#each licenses}}
+### {{name}}
+
+Utilisé par :
+
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}{{#if crate.repository}} — {{crate.repository}}{{/if}}
+{{/each}}
+
+```text
+{{{text}}}
+```
+
+{{/each}}
