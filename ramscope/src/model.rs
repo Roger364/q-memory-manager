@@ -154,6 +154,12 @@ pub struct Advice {
     pub level: Level,
     pub label: String,
     pub reason: String,
+    /// Provenance de la règle nommée ; vide pour un conseil de repli.
+    #[serde(default)]
+    pub source: String,
+    /// Date de revue de la règle, ou `non datée` quand elle n'a pas eu lieu.
+    #[serde(default)]
+    pub reviewed: String,
     /// Action conseillée (None = ne rien faire).
     pub action: Option<Action>,
     /// Verrou de sécurité, distinct de la gravité : un élément verrouillé
@@ -172,6 +178,8 @@ impl Advice {
             level,
             label: level.label().to_string(),
             reason: reason.to_string(),
+            source: String::new(),
+            reviewed: String::new(),
             action: None,
             locked: false,
             gain: Gain::unavailable(),
@@ -180,6 +188,12 @@ impl Advice {
     }
     pub fn with_action(mut self, a: Action) -> Self {
         self.action = Some(a);
+        self
+    }
+    /// Reprend la provenance de la règle qui a produit ce conseil.
+    pub fn with_provenance(mut self, source: &str, reviewed: &str) -> Self {
+        self.source = source.to_string();
+        self.reviewed = reviewed.to_string();
         self
     }
 }

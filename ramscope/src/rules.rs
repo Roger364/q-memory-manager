@@ -36,9 +36,7 @@ pub struct Rule {
     pub target: Option<StartType>,
     pub mode: MatchMode,
     /// Référence de la famille de règles, reprise pour chaque entrée.
-    #[allow(dead_code)]
     pub source: &'static str,
-    #[allow(dead_code)]
     pub reviewed: &'static str,
     pub reason: &'static str,
 }
@@ -55,6 +53,61 @@ const SOURCE_STARTUP: &str =
     "Table RamScope héritée ; référence de famille : Gestionnaire des tâches Windows 11";
 const SOURCE_TASKS: &str =
     "Table RamScope héritée ; référence de famille : Planificateur de tâches Windows 11";
+
+/// Une revue est soit explicitement absente, soit datée au format ISO
+/// `AAAA-MM-JJ`. La validité calendaire est vérifiée pour ne pas accepter
+/// `2026-02-30` comme une date de revue réelle.
+///
+/// L'audit de la base est un contrôle de test : ces deux fonctions ne sont
+/// compilées que pour `cargo test`.
+#[cfg(test)]
+fn reviewed_valide(value: &str) -> bool {
+    if value == REVIEWED {
+        return true;
+    }
+    let b = value.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    if !b[..4].iter().all(u8::is_ascii_digit)
+        || !b[5..7].iter().all(u8::is_ascii_digit)
+        || !b[8..].iter().all(u8::is_ascii_digit)
+    {
+        return false;
+    }
+    let annee = value[..4].parse::<u32>().ok();
+    let mois = value[5..7].parse::<u32>().ok();
+    let jour = value[8..].parse::<u32>().ok();
+    let (Some(annee), Some(mois), Some(jour)) = (annee, mois, jour) else {
+        return false;
+    };
+    if annee == 0 || !(1..=12).contains(&mois) {
+        return false;
+    }
+    let bissextile = (annee % 4 == 0 && annee % 100 != 0) || annee % 400 == 0;
+    let jours = match mois {
+        2 if bissextile => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    (1..=jours).contains(&jour)
+}
+
+/// Vérifie la provenance d'une règle sans imposer la dette « non datée ».
+#[cfg(test)]
+fn verifier_provenance(regle: &Rule) -> Result<(), String> {
+    if regle.source.trim().is_empty() {
+        return Err(format!("source absente pour {}", regle.key));
+    }
+    if !reviewed_valide(regle.reviewed) {
+        return Err(format!(
+            "date de revue invalide pour {} : {:?} (attendu : `non datée` ou AAAA-MM-JJ)",
+            regle.key, regle.reviewed
+        ));
+    }
+    Ok(())
+}
 
 macro_rules! service_rules {
     ($source:expr, $(($key:literal, $level:expr, $target:expr, $reason:literal)),* $(,)?) => {
@@ -937,7 +990,8 @@ pub fn service_advice(
         .or_else(|| SERVICES.iter().find(|r| r.key == d));
 
     if let Some(rule) = hit {
-        let mut a = Advice::new(rule.level, rule.reason);
+        let mut a =
+            Advice::new(rule.level, rule.reason).with_provenance(rule.source, rule.reviewed);
         if is_protected_service(name) {
             a.locked = true;
             return a;
@@ -1009,7 +1063,8 @@ pub fn process_advice(
     let c = lc(company);
 
     if let Some(rule) = PROCESSES.iter().find(|r| r.key == n) {
-        let mut a = Advice::new(rule.level, rule.reason);
+        let mut a =
+            Advice::new(rule.level, rule.reason).with_provenance(rule.source, rule.reviewed);
         if n == "svchost.exe" && !services.is_empty() {
             a.reason = format!(
                 "{} Services hébergés : {}.",
@@ -1067,7 +1122,8 @@ pub fn process_advice(
 /// Conseil pour une entrée de démarrage.
 pub fn startup_advice(name: &str, command: &str, enabled: bool, ram: u64) -> Advice {
     if let Some(rule) = STARTUP.iter().find(|r| r.matches_startup(name, command)) {
-        let mut a = Advice::new(rule.level, rule.reason);
+        let mut a =
+            Advice::new(rule.level, rule.reason).with_provenance(rule.source, rule.reviewed);
         if enabled && matches!(rule.level, Level::Junk | Level::Trim | Level::Optional) {
             a = a.with_action(Action::Startup {
                 id: String::new(),
@@ -1097,7 +1153,8 @@ pub fn task_advice(path: &str, _command: &str, enabled: bool, triggers: &[String
     let p = lc(path);
 
     if let Some(rule) = TASKS.iter().find(|r| r.matches_task(path)) {
-        let mut a = Advice::new(rule.level, rule.reason);
+        let mut a =
+            Advice::new(rule.level, rule.reason).with_provenance(rule.source, rule.reviewed);
         if enabled && matches!(rule.level, Level::Junk | Level::Trim | Level::Optional) {
             a = a.with_action(Action::Task {
                 path: path.to_string(),
@@ -1155,6 +1212,8 @@ mod tests {
             20 * 1024 * 1024,
         );
         assert_eq!(a.level, Level::Trim);
+        assert_eq!(a.source, SOURCE_SERVICES);
+        assert_eq!(a.reviewed, REVIEWED);
         assert_eq!(
             a.action,
             Some(Action::Service {
@@ -1230,6 +1289,38 @@ mod tests {
     }
 
     #[test]
+    fn l_audit_accepte_une_regle_datee_et_refuse_une_date_invalide() {
+        let datee = Rule {
+            key: "exemple",
+            level: Level::Trim,
+            target: None,
+            mode: MatchMode::ServiceName,
+            source: "Référence de test",
+            reviewed: "2026-11-15",
+            reason: "Exemple daté.",
+        };
+        assert!(verifier_provenance(&datee).is_ok());
+        assert!(reviewed_valide("2024-02-29"));
+        let non_datee = Rule {
+            reviewed: REVIEWED,
+            ..datee
+        };
+        assert!(verifier_provenance(&non_datee).is_ok());
+        assert!(!reviewed_valide("2026-02-30"));
+        assert!(!reviewed_valide("2026-13-01"));
+        assert!(!reviewed_valide("15/11/2026"));
+        let invalide = Rule {
+            reviewed: "2026-02-30",
+            ..datee
+        };
+        let erreur = verifier_provenance(&invalide).expect_err("date impossible acceptée");
+        assert!(
+            erreur.contains("date de revue invalide"),
+            "message d'erreur inattendu : {erreur}"
+        );
+    }
+
+    #[test]
     fn audit_des_regles() {
         assert_eq!(SERVICES.len(), 261);
         assert_eq!(PROCESSES.len(), 197);
@@ -1250,8 +1341,9 @@ mod tests {
                 assert!(r.key.len() >= 2, "{nom} : clé trop courte {:?}", r.key);
                 assert_eq!(r.key, r.key.to_lowercase(), "{nom} : clé non minuscule");
                 assert!(!r.reason.trim().is_empty(), "{nom} : action vide");
-                assert!(!r.source.trim().is_empty(), "{nom} : source absente");
-                assert_eq!(r.reviewed, REVIEWED, "{nom} : revue absente");
+                if let Err(error) = verifier_provenance(r) {
+                    panic!("{nom} : {error}");
+                }
                 assert!(!vues.contains(&r.key), "{nom} : doublon {}", r.key);
                 vues.push(r.key);
                 if matches!(mode, MatchMode::StartupExact | MatchMode::TaskPath) {

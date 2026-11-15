@@ -17,6 +17,19 @@ fn gain_text(g: &Gain) -> String {
     }
 }
 
+/// La provenance n'est affichée que lorsqu'elle existe : un conseil de repli
+/// sans règle nommée ne doit pas hériter d'une fausse source.
+fn provenance_text(a: &Advice) -> String {
+    let source = a.source.trim();
+    let reviewed = a.reviewed.trim();
+    match (source.is_empty(), reviewed.is_empty()) {
+        (true, true) => "—".to_string(),
+        (false, true) => source.to_string(),
+        (true, false) => format!("revue : {reviewed}"),
+        (false, false) => format!("{source} · revue : {reviewed}"),
+    }
+}
+
 fn badge(a: &Advice) -> String {
     let cls = match a.level {
         Level::Critical => "crit",
@@ -88,16 +101,17 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
     }
 
     // --- plan ---
-    h.push_str("<h2>Plan d'optimisation recommandé</h2><table><tr><th>Élément</th><th>Verdict</th><th>Action conseillée</th><th class=\"num\">Tout de suite</th><th class=\"num\">Au prochain démarrage</th><th>Pourquoi</th></tr>");
+    h.push_str("<h2>Plan d'optimisation recommandé</h2><table><tr><th>Élément</th><th>Verdict</th><th>Action conseillée</th><th class=\"num\">Tout de suite</th><th class=\"num\">Au prochain démarrage</th><th>Pourquoi</th><th>Provenance</th></tr>");
     let mut rows = 0;
     for svc in &s.services {
         if let Some(a) = &svc.advice.action {
             if svc.advice.level.preselected() {
                 rows += 1;
                 h.push_str(&format!(
-                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td></tr>",
+                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
                     esc(&svc.display), esc(&svc.name), badge(&svc.advice), esc(&a.describe()),
-                    gain_text(&svc.advice.gain), gain_text(&svc.advice.gain_next_boot), esc(&svc.advice.reason)
+                    gain_text(&svc.advice.gain), gain_text(&svc.advice.gain_next_boot), esc(&svc.advice.reason),
+                    esc(&provenance_text(&svc.advice))
                 ));
             }
         }
@@ -107,9 +121,10 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
             if st.advice.level.preselected() {
                 rows += 1;
                 h.push_str(&format!(
-                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td></tr>",
+                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
                     esc(&st.name), esc(&st.command), badge(&st.advice), esc(&a.describe()),
-                    gain_text(&st.advice.gain), gain_text(&st.advice.gain_next_boot), esc(&st.advice.reason)
+                    gain_text(&st.advice.gain), gain_text(&st.advice.gain_next_boot), esc(&st.advice.reason),
+                    esc(&provenance_text(&st.advice))
                 ));
             }
         }
@@ -119,59 +134,60 @@ code{{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px;word-b
             if t.advice.level.preselected() {
                 rows += 1;
                 h.push_str(&format!(
-                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">—</td><td class=\"num\">—</td><td class=\"why\">{}</td></tr>",
-                    esc(&t.name), esc(&t.path), badge(&t.advice), esc(&a.describe()), esc(&t.advice.reason)
+                    "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">—</td><td class=\"num\">—</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
+                    esc(&t.name), esc(&t.path), badge(&t.advice), esc(&a.describe()), esc(&t.advice.reason),
+                    esc(&provenance_text(&t.advice))
                 ));
             }
         }
     }
     if rows == 0 {
-        h.push_str("<tr><td colspan=\"6\">Rien à optimiser : configuration déjà saine.</td></tr>");
+        h.push_str("<tr><td colspan=\"7\">Rien à optimiser : configuration déjà saine.</td></tr>");
     }
     h.push_str("</table>");
 
     // --- processus ---
-    h.push_str("<h2>Processus en mémoire</h2><table><tr><th>Processus</th><th class=\"num\">PID</th><th class=\"num\">RAM privée</th><th class=\"num\">RAM totale</th><th>Verdict</th><th>Pourquoi</th></tr>");
+    h.push_str("<h2>Processus en mémoire</h2><table><tr><th>Processus</th><th class=\"num\">PID</th><th class=\"num\">RAM privée</th><th class=\"num\">RAM totale</th><th>Verdict</th><th>Pourquoi</th><th>Provenance</th></tr>");
     for p in &s.processes {
         h.push_str(&format!(
-            "<tr><td><b>{}</b><br><span class=\"why\">{}</span></td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td>{}</td><td class=\"why\">{}</td></tr>",
+            "<tr><td><b>{}</b><br><span class=\"why\">{}</span></td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td>{}</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
             esc(&p.name), esc(&p.description), p.pid, fmt_bytes(p.private), fmt_bytes(p.working_set),
-            badge(&p.advice), esc(&p.advice.reason)
+            badge(&p.advice), esc(&p.advice.reason), esc(&provenance_text(&p.advice))
         ));
     }
     h.push_str("</table>");
 
     // --- services ---
-    h.push_str("<h2>Services</h2><table><tr><th>Service</th><th>État</th><th>Démarrage</th><th class=\"num\">RAM</th><th>Verdict</th><th>Pourquoi</th></tr>");
+    h.push_str("<h2>Services</h2><table><tr><th>Service</th><th>État</th><th>Démarrage</th><th class=\"num\">RAM</th><th>Verdict</th><th>Pourquoi</th><th>Provenance</th></tr>");
     for v in &s.services {
         h.push_str(&format!(
-            "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td>{}</td><td class=\"why\">{}</td></tr>",
+            "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td>{}</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
             esc(&v.display), esc(&v.name), esc(&v.state), esc(v.start.label()),
-            fmt_bytes(v.ram), badge(&v.advice), esc(&v.advice.reason)
+            fmt_bytes(v.ram), badge(&v.advice), esc(&v.advice.reason), esc(&provenance_text(&v.advice))
         ));
     }
     h.push_str("</table>");
 
     // --- démarrage ---
-    h.push_str("<h2>Démarrage automatique</h2><table><tr><th>Entrée</th><th>Emplacement</th><th>État</th><th>Verdict</th><th>Pourquoi</th></tr>");
+    h.push_str("<h2>Démarrage automatique</h2><table><tr><th>Entrée</th><th>Emplacement</th><th>État</th><th>Verdict</th><th>Pourquoi</th><th>Provenance</th></tr>");
     for v in &s.startup {
         h.push_str(&format!(
-            "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td class=\"why\">{}</td></tr>",
+            "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
             esc(&v.name), esc(&v.command), esc(&v.location),
             if v.enabled { "Activé" } else { "Désactivé" },
-            badge(&v.advice), esc(&v.advice.reason)
+            badge(&v.advice), esc(&v.advice.reason), esc(&provenance_text(&v.advice))
         ));
     }
     h.push_str("</table>");
 
     // --- tâches ---
-    h.push_str("<h2>Tâches planifiées</h2><table><tr><th>Tâche</th><th>Déclencheurs</th><th>État</th><th>Verdict</th><th>Pourquoi</th></tr>");
+    h.push_str("<h2>Tâches planifiées</h2><table><tr><th>Tâche</th><th>Déclencheurs</th><th>État</th><th>Verdict</th><th>Pourquoi</th><th>Provenance</th></tr>");
     for v in &s.tasks {
         h.push_str(&format!(
-            "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td class=\"why\">{}</td></tr>",
+            "<tr><td><b>{}</b><br><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td class=\"why\">{}</td><td class=\"why\">{}</td></tr>",
             esc(&v.name), esc(&v.path), esc(&v.triggers.join(", ")),
             if v.enabled { "Activée" } else { "Désactivée" },
-            badge(&v.advice), esc(&v.advice.reason)
+            badge(&v.advice), esc(&v.advice.reason), esc(&provenance_text(&v.advice))
         ));
     }
     h.push_str("</table>");
@@ -198,5 +214,17 @@ mod tests {
         let interdit = format!("Rien à optimiser {} risque", "sans");
         assert!(!h.contains(&interdit));
         assert!(!h.contains("Gain</th>"));
+    }
+
+    #[test]
+    fn le_rapport_expose_la_provenance_des_regles() {
+        let s = crate::demo::DemoState::default().snapshot();
+        let h = build(&s);
+        assert!(
+            h.contains("Table RamScope héritée"),
+            "source absente du rapport"
+        );
+        assert!(h.contains("non datée"), "date de revue absente du rapport");
+        assert!(h.contains("Provenance"), "colonne de provenance absente");
     }
 }

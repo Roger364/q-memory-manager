@@ -120,6 +120,12 @@ function addGain(total, g) {
   total.bytes += g.bytes;
   total.nature = 'estimated';
 }
+function provenanceText(a) {
+  const source = a && a.source ? String(a.source).trim() : '';
+  const reviewed = a && a.reviewed ? String(a.reviewed).trim() : '';
+  if (!source && !reviewed) return '';
+  return source + (reviewed ? (source ? ' · revue : ' : 'revue : ') + reviewed : '');
+}
 function aggregateGains(entries) {
   const now = emptyGain(), boot = emptyGain();
   const hosts = new Map();
@@ -623,6 +629,7 @@ function detailBox(kind, it) {
   addHtml('Effet au prochain démarrage', it.advice.action ? gainText(it.advice.gain_next_boot) : 'Aucun changement');
   addText('Réversibilité', reversibility(it));
   addText('Justification', it.advice.reason);
+  addText('Provenance de la règle', provenanceText(it.advice));
 
   if (kind === 'processes') {
     addText('Éditeur', it.company); addText('Description', it.description);

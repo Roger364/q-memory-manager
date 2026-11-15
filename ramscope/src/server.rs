@@ -789,6 +789,21 @@ mod tests {
     }
 
     #[test]
+    fn le_snapshot_expose_la_provenance_des_regles() {
+        let s = crate::demo::DemoState::default().snapshot();
+        let a = s
+            .services
+            .iter()
+            .map(|v| &v.advice)
+            .find(|a| !a.source.is_empty())
+            .expect("un service du jeu de démonstration doit citer une règle");
+        assert!(!a.reviewed.is_empty());
+        let json = serde_json::to_value(a).expect("conseil sérialisable");
+        assert_eq!(json["source"].as_str(), Some(a.source.as_str()));
+        assert_eq!(json["reviewed"].as_str(), Some(a.reviewed.as_str()));
+    }
+
+    #[test]
     fn l_interface_ne_convertit_pas_le_gain_differe_en_immediat() {
         let js = include_str!("web/app.js");
         assert!(
@@ -824,6 +839,7 @@ mod tests {
         assert!(js.contains("effet au prochain démarrage"));
         assert!(js.contains("réversibilité"));
         assert!(js.contains("justification"));
+        assert!(js.contains("provenance de la règle"));
     }
 
     #[test]
