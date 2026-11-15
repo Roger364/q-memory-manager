@@ -451,6 +451,108 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 
 **Hors périmètre de ce lot.** Le helper élevé par lot, le named pipe/DACL, la suppression de l'UAC et toute revendication de protection contre un malware local.
 
+### 9.12 — Helper elevated one-shot : D9-2b
+
+**État :** note de conception, **non implémenté**. Aucun code, aucune dépendance et aucun test de production ne sont ajoutés par cette note.
+
+**Objectif.** Réduire la durée pendant laquelle RamScope détient un jeton administrateur. Le parcours normal ne doit plus élever une instance complète de l'interface : une opération d'écriture explicitement confirmée lance un helper élevé, qui reçoit une seule demande, la revérifie, l'applique, renvoie son résultat puis se termine. L'interface standard reste en lecture seule.
+
+**Décision de principe.** Le helper est un **one-shot par lot**, pas un serveur administrateur résident :
+- une seule demande par processus ;
+- aucun écouteur HTTP, aucune page, aucun navigateur ;
+- sortie après la réponse, l'annulation ou le délai de sécurité ;
+- une nouvelle opération exige une nouvelle demande et une nouvelle UAC.
+
+**Non-objectifs.**
+- Remplacer HTTP par un named pipe pour toute l'interface : seul le canal helper est concerné.
+- Supprimer l'UAC ou promettre une protection contre un processus local hostile du même compte (D9-1 reste accepté).
+- Garder un broker administrateur en arrière-plan.
+- Exécuter une commande arbitraire ou une action absente du snapshot courant.
+- Remplacer immédiatement `--admin`, qui reste le mode explicite d'une session entièrement élevée.
+
+**Architecture retenue.**
+1. Le serveur standard valide la sélection et construit un lot (`apply` ou `restore`) avec les états observés nécessaires.
+2. Il crée un named pipe **à une seule instance**, avec un nom aléatoire et une DACL limitée à `SYSTEM` et au groupe `Administrators`, puis `PIPE_REJECT_REMOTE_CLIENTS`.
+3. Il lance le même exécutable avec un mode interne `--helper --pipe <nom> --nonce <32 octets hex> --server-pid <pid>` via `ShellExecuteExW(..., "runas", SEE_MASK_NOCLOSEPROCESS)`. L'UAC reste le consentement utilisateur.
+4. Le helper se connecte au pipe, s'authentifie, reçoit **une** demande encadrée, la revérifie sur une collecte fraîche, applique le lot et renvoie un résultat structuré.
+5. Le serveur standard affiche le résultat et reprend son état lecture seule ; le helper se termine.
+
+**Pourquoi un pipe créé par le serveur standard.** Le helper n'ouvre aucun port et n'a pas à écouter. Le serveur possède déjà le pipe avant l'UAC, peut vérifier le PID du client et fermer le canal en cas d'annulation. Un fichier de demande temporaire serait plus simple mais offrirait un canal moins contrôlable et une course de fichiers supplémentaire.
+
+**Canal et authentification.**
+- Nom de pipe imprévisible ; une seule instance ; messages encadrés par une longueur et bornés (demande maximale 64 Kio).
+- `nonce` CSPRNG de 32 octets, à usage unique, jamais journalisé ; il est passé au helper par la ligne de commande, donc lisible par un processus du même compte. Ce n'est pas une frontière contre un malware local (D9-1).
+- Le serveur vérifie le PID du client avec `GetNamedPipeClientProcessId`, le compare au PID retourné par `ShellExecuteEx` et vérifie la session interactive. Il refuse un client qui n'est pas le helper lancé.
+- Le helper vérifie `GetNamedPipeServerProcessId` contre `--server-pid`, vérifie qu'il est réellement élevé, puis envoie `HELLO {nonce, version}`. Un `nonce` invalide, un PID différent ou une deuxième connexion ferment le canal sans action.
+- La DACL du pipe réduit les connexions accidentelles ou inter-sessions ; elle ne protège pas contre un processus malveillant du même compte, qui peut déjà lire la page et le jeton (D9-1). Cette limite doit rester écrite dans `SAFETY.md`.
+
+**Protocole minimal.**
+- `HELLO` : nonce, version du protocole, PID du serveur.
+- `REQUEST` : `request_id`, `operation` (`apply` ou `restore`), lot d'actions avec leurs états observés, libellé, limite de taille.
+- `RESULT` : `request_id`, `ok`, message, entrées de rollback éventuelles, code d'erreur.
+- Le serveur n'envoie qu'une demande ; le helper ne lit qu'une demande ; le canal est fermé après la réponse. Un `request_id` rejoué est refusé.
+
+**Validation côté helper.** Le helper ne fait pas confiance au lot reçu :
+- il vérifie qu'il est élevé et que la demande vient du PID serveur attendu ;
+- il recollecte l'état courant et refuse toute action absente du snapshot, déjà appliquée, protégée, hors limite ou dont l'état a changé ;
+- il réutilise les mêmes fonctions pures de `plan` que le serveur, sans dupliquer les listes de protection ;
+- il refuse `StartService` sur une route utilisateur et réserve les inverses de restauration au chemin interne ;
+- il borne le nombre d'actions (400) et la taille de la demande ;
+- il n'accepte aucune action de type « kill » non proposée par le snapshot courant.
+
+**Durée de vie et annulation.**
+- Attente d'une demande : 30 s maximum ; opération : délai global de 120 s, à ajuster après mesure.
+- Une annulation avant le début de l'application ne produit aucune écriture.
+- Une annulation ou une coupure pendant l'application peut laisser un lot partiel : le helper renvoie les entrées de rollback déjà produites ; le serveur marque le résultat `partial` et ne rejoue jamais automatiquement.
+- Si le helper dépasse le délai, le serveur ferme le pipe et attend sa sortie ; tuer un helper élevé doit être exceptionnel, journalisé et ne doit pas être présenté comme un rollback.
+- Aucun processus élevé ne doit rester après un résultat, une erreur, une annulation ou un timeout.
+
+**Interface et compatibilité.**
+- Le bouton global « Passer en administrateur » ne peut pas conserver son sens actuel avec un helper one-shot. Le parcours recommandé est un bouton **« Appliquer avec élévation »** sur le lot confirmé ; sans lot sélectionné, aucune UAC n'est demandée.
+- Une route dédiée, par exemple `POST /api/apply-elevated` et `POST /api/restore-elevated`, porte le lot et le consentement. L'ancienne route `/api/elevate` ne doit pas lancer silencieusement une instance longue durée dans le nouveau parcours.
+- `--admin` reste disponible pour une session explicitement élevée ; `--no-admin` continue d'interdire toute demande. Le mode `--elevated` existant reste interne tant que `--admin` en dépend.
+- Le helper ne doit pas être exposé dans `--help` comme une option utilisateur.
+
+**Tests de réversion nommés.**
+- `le_helper_refuse_un_nonce_rejoue` : une deuxième connexion avec le même nonce ne reçoit aucune demande.
+- `le_helper_refuse_un_pid_serveur_different` : un pipe usurpé ne peut pas faire exécuter une action.
+- `le_helper_refuse_une_session_differente` : le PID et la session du client sont vérifiés.
+- `le_helper_exige_l_elevation` : un helper non élevé refuse la demande.
+- `le_helper_refuse_une_action_hors_snapshot` : un lot forgé ne passe pas la revérification fraîche.
+- `le_helper_refuse_un_lot_trop_grand` : la borne de 400 actions et la taille de message sont testées.
+- `le_helper_refuse_une_restauration_non_demandee` : le chemin restore n'accepte que l'identifiant prévu.
+- `le_helper_sort_apres_une_reponse` : aucun processus élevé ne survit au résultat.
+- Test Sandbox compte standard : acceptation UAC, une action réelle appliquée, helper sorti, serveur standard toujours `admin:false` et `can_elevate:true`, puis deuxième opération avec un nouveau PID de helper.
+- Test Sandbox annulation : UAC annulée ou pipe fermé avant `REQUEST` ; aucune action, aucun helper restant.
+- Test Sandbox coupure : helper interrompu pendant un lot ; résultat `partial` ou `unknown` explicite, jamais de rejeu automatique.
+
+**Critères de sortie.**
+- [ ] Aucune instance RamScope élevée ne reste après une opération normale ; le helper ne sert qu'une demande.
+- [ ] Le serveur standard ne devient jamais administrateur et son interface reste en lecture seule.
+- [ ] Un lot forgé, rejoué ou hors snapshot est refusé par le helper.
+- [ ] Une annulation UAC ne laisse ni pipe ouvert ni processus élevé.
+- [ ] Les tests de réversion ci-dessus échouent si le contrôle correspondant est retiré.
+- [ ] La documentation ne présente pas le pipe comme une protection contre un malware du même compte.
+
+**Risques et parades.**
+- **Course UAC/pipe** : créer le pipe et le nom avant `ShellExecuteEx`, conserver le handle, fermer en cas d'échec ; ne jamais réutiliser un nom.
+- **DACL trop large ou trop étroite** : test avec compte standard et compte administrateur distinct ; `SYSTEM` + `Administrators`, pas `Everyone`.
+- **PID réutilisé** : comparer le handle de processus et la session, pas seulement le numéro après attente.
+- **Lot partiel** : retour explicite `partial` avec entrées de rollback ; pas de compensation automatique non testée.
+- **Duplication de validation** : réutiliser les fonctions pures de `plan` et ajouter un test qui contourne le serveur.
+- **UX** : le bouton global actuel ne doit pas être conservé avec une promesse d'élévation persistante ; la confirmation doit nommer le lot et l'action élevée.
+
+**Décisions ouvertes avant implémentation.**
+1. Périmètre initial : apply seulement, ou apply + restore dès la première version.
+2. Conserver `--admin` comme mode documenté ou le déprécier après validation du helper.
+3. Forme exacte de la route et du bouton de confirmation du lot.
+4. DACL précise et comportement avec un administrateur UAC différent du compte standard.
+5. Politique de timeout et de résultat `unknown` après mort brutale du helper.
+
+**Effort indicatif.** 2 à 3 jours de développement et de tests, hors validation Sandbox étendue ; aucune dépendance externe nouvelle (FFI Windows et named pipes natifs).
+
+**Hors périmètre de cette note.** Implémentation, migration de l'interface, suppression de `--admin`, refonte D9-3 du canal local et toute revendication de protection contre un processus local hostile.
+
 ## 6. Ordre de livraison recommandé
 
 1. **9.1** : chemins système et données (C7), indépendant et testable rapidement.
@@ -535,7 +637,7 @@ C7, C6, C2 et D9-2a sont traités. D9-2a est clôturé avec les preuves UAC, rou
 La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_strict_ne_propose_pas_de_relance_admin`. L'alias `127.0.0.1` non joignable avec `--host localhost` est désormais documenté comme comportement de liaison : `localhost` suit la résolution locale (souvent `::1`), et l'adresse affichée au démarrage doit être utilisée. Aucun changement de code n'est retenu pour ce point.
 
 Ordre recommandé pour la suite :
-1. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
+1. **D9-2b — helper elevated one-shot** (conception en **9.12**) : valider les décisions ouvertes, puis implémenter le canal local, l'authentification, la durée de vie et les tests de réversion. Ne pas le mélanger à D9-1 ni à C2.
 2. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
 3. **C9–C13** : robustesse et finitions, avec tests ciblés.
 4. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
