@@ -830,5 +830,8 @@ Pour C14, `gain_text` et le rendu JS testent la nature avant la valeur. Un `Gain
 | `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
 | `git grep` des motifs de secrets connus | 1 | aucune correspondance dans les fichiers suivis |
 | `git diff --check` | 0 | aucune erreur d'espacement |
+| `git push origin main` | 0 | `e178d68` publié |
+| `gh repo edit --visibility public` | 0 | dépôt public |
+| GitHub Actions `43681932387` | 0 | toutes les étapes ont réussi |
 
-**Limites.** Aucun push n'a été effectué. Les revues Hermes demandées ont été supprimées ; `sandbox-test/` est conservé localement mais ignoré par Git, donc il ne sera pas publié. Le fichier de notices contient les textes intégraux générés par `cargo-about` ; il doit être régénéré si les dépendances changent. La page Open Source de `bissestudio.ch` n'est pas dans ce dépôt et reste à publier. La titularité exacte du nom légal et les obligations de consommation suisses/européennes doivent être validées par un avocat avant une diffusion commerciale.
+**État public (2026-11-15).** Le dépôt est public sur `https://github.com/Roger364/q-memory-manager` et GitHub détecte la licence MIT. Les revues Hermes demandées ont été supprimées ; `review - workbuddy.md` reste suivi et est donc public. `sandbox-test/` est conservé localement mais ignoré par Git, donc il n'est pas publié. Le fichier de notices contient les textes intégraux générés par `cargo-about` ; il doit être régénéré si les dépendances changent. La page Open Source de `bissestudio.ch` n'est pas dans ce dépôt et reste à publier. La titularité exacte du nom légal et les obligations de consommation suisses/européennes doivent être validées par un avocat avant une diffusion commerciale.

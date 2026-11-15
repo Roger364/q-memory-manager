@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14, 86 après C9–C13, puis 83 après C8 (quatre tests de chaînes remplacés par quatre tests Node et un test Rust) ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14, C9–C13, C8 et C15 sont traités ; C3/C4/C5 sont corrigés. La licence MIT est appliquée localement ; le push et la vérification CI restent à faire.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14, 86 après C9–C13, puis 83 après C8 (quatre tests de chaînes remplacés par quatre tests Node et un test Rust) ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14, C9–C13, C8 et C15 sont traités ; C3/C4/C5 sont corrigés. La licence MIT est appliquée, publiée et la CI GitHub est verte.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -24,7 +24,7 @@ Je ne reprends pas son ordre tel quel :
 
 - **C1 est une dette de vérité des données, pas une élévation de privilèges.** Il reste un critère de sortie avant distribution, mais il ne doit pas retarder C7 et C2, qui sont des risques d'exécution élevée et de frontière de confiance.
 - **C2 est un risque local, pas une faille distante.** Le plan doit rendre explicite le modèle de menace et éviter de promettre une authentification que le jeton actuel ne fournit pas.
-- **C15 était une décision, pas un correctif de code.** La décision MIT a été prise par Ro le 2026-11-15 ; elle est appliquée localement.
+- **C15 était une décision, pas un correctif de code.** La décision MIT a été prise par Ro le 2026-11-15 ; elle est appliquée et publiée.
 - **C8 est un chantier de qualité de tests**, séparé des correctifs de sécurité. Il ne doit pas être noyé dans la CI déjà livrée.
 
 ### 1.3 Verdict par constat
@@ -389,7 +389,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 - `SECURITY.md` : canal privé, périmètre, versions et réduction du risque.
 - `CONTRIBUTING.md` : DCO, licence MIT des contributions, commandes de test et règles de sécurité.
 
-**Reste à faire.** Le push n'a pas été effectué. Les revues Hermes ont été supprimées et `sandbox-test/` est désormais ignoré localement : il reste sur la machine comme archive de test, mais ne sera pas publié. Le garde-fou CI des fichiers non suivis peut donc passer.
+**État final (2026-11-15).** Push effectué (`e178d68`), dépôt public sur `https://github.com/Roger364/q-memory-manager`, licences détectées par GitHub (`MIT`). Les revues Hermes ont été supprimées et `sandbox-test/` est ignoré localement : il reste sur la machine comme archive de test, mais n'est pas publié. La CI GitHub `43681932387` a réussi toutes ses étapes.
 
 **Critère de sortie.** La décision de licence est consignée et appliquée ; la CI reste verte ; le dépôt distant est synchronisé après accord de Ro.
 
@@ -595,7 +595,7 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
-C1, C14, C9–C13, C8 et C15 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique est possible sous MIT, sous réserve du push et de la CI.
+C1, C14, C9–C13, C8 et C15 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique est possible sous MIT, le dépôt est public et la CI est verte.
 
 ## 7. Matrice de tests à ajouter
 
