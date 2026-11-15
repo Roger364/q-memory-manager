@@ -227,8 +227,11 @@ pub fn extract_exe(cmd: &str) -> String {
     let raw = if let Some(rest) = c.strip_prefix('"') {
         rest.split('"').next().unwrap_or("").to_string()
     } else {
-        // Pas de guillemets : on coupe au premier argument connu
-        let lower = c.to_lowercase();
+        // Pas de guillemets : on coupe au premier argument connu. La
+        // recherche doit conserver les indices d'origine : `to_lowercase()`
+        // peut changer la longueur UTF-8 de certaines lettres (par exemple
+        // `İ`), et un indice devenu trop grand ferait paniquer la découpe.
+        let lower = c.to_ascii_lowercase();
         match lower.find(".exe") {
             Some(i) => c[..i + 4].to_string(),
             None => c.split_whitespace().next().unwrap_or("").to_string(),
@@ -240,6 +243,16 @@ pub fn extract_exe(cmd: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_exe_supporte_une_casse_unicode_sans_paniquer() {
+        assert_eq!(extract_exe(r"C:\İ.exe --demo"), "İ.exe");
+        assert_eq!(extract_exe(r"C:\Été.exe --demo"), "Été.exe");
+        assert_eq!(
+            extract_exe(r#""C:\Dossier Unicode\outil.EXE" --x"#),
+            "outil.EXE"
+        );
+    }
 
     #[test]
     fn le_jeton_de_session_est_long_hexadecimal_et_imprevisible() {

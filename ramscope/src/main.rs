@@ -83,6 +83,20 @@ mod tests {
     }
 
     #[test]
+    fn le_dernier_port_est_essaye_et_la_plage_ne_deborde_pas() {
+        assert_eq!(ports_candidats(65535).collect::<Vec<_>>(), vec![65535]);
+        assert_eq!(
+            ports_candidats(65530).collect::<Vec<_>>(),
+            vec![65530, 65531, 65532, 65533, 65534, 65535]
+        );
+        assert_eq!(ports_candidats(DEFAULT_PORT).count(), PORT_ATTEMPTS);
+        assert_eq!(plage_ports(65535), (65535, 65535));
+        assert_eq!(plage_ports(65530), (65530, 65535));
+        assert!(message_ports_epuises(65530, "port 65535 occupé")
+            .contains("aucun port libre dans la plage 65530–65535"));
+    }
+
+    #[test]
     fn une_relance_elevee_reessaie_le_port_avant_de_changer() {
         assert!(should_retry_same_port(
             ElevationMode::AlreadyElevated,
@@ -168,6 +182,22 @@ fn elevation_mode(
 }
 
 const ELEVATED_PORT_RETRIES: u8 = 20;
+const PORT_ATTEMPTS: usize = 12;
+
+/// Les douze ports à essayer, sans déborder au-delà de 65 535.
+fn ports_candidats(depart: u16) -> impl Iterator<Item = u16> {
+    (depart..=u16::MAX).take(PORT_ATTEMPTS)
+}
+
+/// Bornes affichables de la plage réellement essayée.
+fn plage_ports(depart: u16) -> (u16, u16) {
+    (depart, depart.saturating_add(PORT_ATTEMPTS as u16 - 1))
+}
+
+fn message_ports_epuises(depart: u16, dernier: &str) -> String {
+    let (debut, fin) = plage_ports(depart);
+    format!("aucun port libre dans la plage {debut}–{fin} (dernier essai : {dernier})")
+}
 
 /// Vrai si une relance élevée doit attendre que l'ancien serveur libère le
 /// même port avant de se rabattre sur le suivant. Séparé de la boucle pour
@@ -267,7 +297,8 @@ fn main() {
     // port alors que l'instance élevée écoute ailleurs.
     let mut elevated_port_retries = 0u8;
     let mut last_err = None;
-    for p in port..port.saturating_add(12) {
+    let mut tous_les_ports_occupes = true;
+    for p in ports_candidats(port) {
         loop {
             match server::serve(&host, p, demo, can_elevate, open_browser) {
                 Ok(()) => return,
@@ -281,6 +312,7 @@ fn main() {
                         last_err = Some(format!("port {p} occupé"));
                         break;
                     }
+                    tous_les_ports_occupes = false;
                     last_err = Some(e.to_string());
                     break;
                 }
@@ -288,10 +320,12 @@ fn main() {
         }
     }
 
-    let msg = format!(
-        "RamScope n'a pas pu démarrer son interface locale.\n\n{}",
+    let detail = if tous_les_ports_occupes {
+        message_ports_epuises(port, last_err.as_deref().unwrap_or("aucune tentative"))
+    } else {
         last_err.unwrap_or_else(|| "erreur inconnue".into())
-    );
+    };
+    let msg = format!("RamScope n'a pas pu démarrer son interface locale.\n\n{detail}");
     if let Ok(dir) = util::data_dir() {
         let _ = std::fs::write(dir.join("erreur.log"), &msg);
     }

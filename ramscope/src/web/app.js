@@ -616,7 +616,7 @@ function currentState(kind, it) {
 function reversibility(it) {
   const a = it.advice.action;
   if (!a) return 'Aucune action proposée';
-  if (a.kind === 'kill') return 'Irrréversible — le travail non enregistré sera perdu';
+  if (a.kind === 'kill') return 'Irréversible — le travail non enregistré sera perdu';
   if (a.kind === 'stop_service') return 'Partiel — le service peut redémarrer, mais son état et son cache sont perdus';
   return 'Réversible via le point de restauration';
 }
@@ -716,7 +716,7 @@ function describeAction(a) {
 }
 
 function actionNote(a) {
-  if (a.kind === 'kill') return 'Irrréversible : travail non enregistré perdu, aucune annulation.';
+  if (a.kind === 'kill') return 'Irréversible : travail non enregistré perdu, aucune annulation.';
   if (a.kind === 'stop_service') return 'Partiel : le service peut redémarrer, mais son état et son cache sont perdus.';
   return 'Réversible via le point de restauration.';
 }

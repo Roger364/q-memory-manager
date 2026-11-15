@@ -489,6 +489,38 @@ fn favicon() -> String {
     r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0e1420"/><rect x="12" y="20" width="8" height="26" rx="2" fill="#4ade80"/><rect x="24" y="14" width="8" height="32" rx="2" fill="#38bdf8"/><rect x="36" y="26" width="8" height="20" rx="2" fill="#fbbf24"/><rect x="48" y="32" width="4" height="14" rx="2" fill="#f87171"/></svg>"##.into()
 }
 
+/// Lance les quatre travailleurs HTTP. Ils sont rejoints à l'arrêt pour
+/// laisser finir une écriture de rollback ou une réponse déjà commencée.
+fn spawn_workers(server: Arc<Server>, app: Arc<App>) -> Vec<std::thread::JoinHandle<()>> {
+    let mut handles = Vec::with_capacity(4);
+    for _ in 0..4 {
+        let s = server.clone();
+        let a = app.clone();
+        handles.push(std::thread::spawn(move || {
+            while let Ok(req) = s.recv() {
+                handle(&a, req);
+                if a.stop.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+        }));
+    }
+    handles
+}
+
+/// Réveille les travailleurs bloqués dans `recv`, puis attend leur fin.
+/// Retourne le nombre de threads effectivement rejoints.
+fn stop_workers(server: &Server, handles: Vec<std::thread::JoinHandle<()>>) -> usize {
+    for _ in 0..handles.len() {
+        server.unblock();
+    }
+    handles
+        .into_iter()
+        .map(|handle| handle.join().is_ok())
+        .filter(|joined| *joined)
+        .count()
+}
+
 pub fn serve(
     host: &str,
     port: u16,
@@ -545,30 +577,22 @@ pub fn serve(
         open_window(&url);
     }
 
-    let mut handles = Vec::new();
-    for _ in 0..4 {
-        let s = server.clone();
-        let a = app.clone();
-        handles.push(std::thread::spawn(move || {
-            while let Ok(req) = s.recv() {
-                handle(&a, req);
-                if a.stop.load(Ordering::SeqCst) {
-                    break;
-                }
-            }
-        }));
-    }
+    let handles = spawn_workers(server.clone(), app.clone());
 
-    // boucle de surveillance : arrêt propre
+    // boucle de surveillance : arrêt coopératif, sans couper un thread qui
+    // pourrait encore écrire un point de restauration.
     loop {
         std::thread::sleep(Duration::from_millis(200));
         if app.stop.load(Ordering::SeqCst) {
             break;
         }
     }
-    std::thread::sleep(Duration::from_millis(300));
     println!("RamScope arrêté.");
-    std::process::exit(0);
+    let arretes = stop_workers(&server, handles);
+    if arretes != 4 {
+        eprintln!("RamScope : {arretes}/4 threads d'interface rejoints à l'arrêt");
+    }
+    Ok(())
 }
 
 /// Ouvre une fenêtre « application » (sans barre d'adresse) si Edge/Chrome est
@@ -789,6 +813,26 @@ mod tests {
     }
 
     #[test]
+    fn l_arret_cooperatif_attend_les_quatre_threads() {
+        let serveur = Arc::new(Server::http("127.0.0.1:0").expect("serveur de test"));
+        let app = Arc::new(App {
+            backend: Backend::new(true),
+            token: "jeton-de-test".into(),
+            cache: Mutex::new(None),
+            stop: AtomicBool::new(false),
+            can_elevate: false,
+            allowed_hosts: vec!["127.0.0.1:0".into()],
+        });
+        let handles = spawn_workers(serveur.clone(), app.clone());
+        app.stop.store(true, Ordering::SeqCst);
+        assert_eq!(
+            stop_workers(&serveur, handles),
+            4,
+            "l'arrêt doit rejoindre les quatre travailleurs"
+        );
+    }
+
+    #[test]
     fn le_snapshot_expose_la_provenance_des_regles() {
         let s = crate::demo::DemoState::default().snapshot();
         let a = s
@@ -857,6 +901,12 @@ mod tests {
         assert!(js.contains("réversibilité"));
         assert!(js.contains("justification"));
         assert!(js.contains("provenance de la règle"));
+        assert!(!js.contains("Irrréversible"), "faute visible dans app.js");
+        assert!(
+            js.contains("&quot;"),
+            "échappement du guillemet double absent"
+        );
+        assert!(js.contains("&#39;"), "échappement de l'apostrophe absent");
     }
 
     #[test]

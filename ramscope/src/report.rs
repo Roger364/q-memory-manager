@@ -7,6 +7,7 @@ fn esc(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 fn gain_text(g: &Gain) -> String {
@@ -214,6 +215,15 @@ mod tests {
         let interdit = format!("Rien à optimiser {} risque", "sans");
         assert!(!h.contains(&interdit));
         assert!(!h.contains("Gain</th>"));
+    }
+
+    #[test]
+    fn echappe_l_apostrophe_comme_l_interface() {
+        assert_eq!(esc("l'utilisateur"), "l&#39;utilisateur");
+        assert_eq!(
+            esc("<script>d'accord</script>"),
+            "&lt;script&gt;d&#39;accord&lt;/script&gt;"
+        );
     }
 
     #[test]
