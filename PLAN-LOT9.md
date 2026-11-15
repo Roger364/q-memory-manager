@@ -409,7 +409,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 - `le_serveur_strict_ne_propose_pas_elevate` : contrôle serveur/JS, pas seulement le texte du README.
 - `le_snapshot_annonce_le_droit_d_elevation` : propagation de `can_elevate` au snapshot.
 - `une_relance_elevee_reessaie_le_port_avant_de_changer` : le retry de port est limité à `--elevated`, et seulement tant que le quota de tentatives n'est pas épuisé.
-- Test dans une VM avec un **compte standard** : défaut sans UAC ; clic « Passer en administrateur » → UAC ; annulation → l'ancien serveur lecture seule reste vivant ; acceptation → une seule instance élevée ; `--admin` → UAC au démarrage ; `--no-admin` → aucune proposition d'élévation. **Exécuté le 2026-11-15 dans un Windows Sandbox de test : les scénarios `--admin` d'acceptation et d'annulation, `POST /api/elevate` avec `admin:false` → UAC acceptée → `admin:true` sur le même port, le clic DOM et le rechargement avec Chrome for Testing portable sont validés ; `--no-admin` sur VM standard reste à rejouer.**
+- Test dans une VM avec un **compte standard** : défaut sans UAC ; clic « Passer en administrateur » → UAC ; annulation → l'ancien serveur lecture seule reste vivant ; acceptation → une seule instance élevée ; `--admin` → UAC au démarrage ; `--no-admin` → aucune proposition d'élévation. **Exécuté le 2026-11-15 dans un Windows Sandbox de test : les scénarios `--admin` d'acceptation et d'annulation, `POST /api/elevate` avec `admin:false` → UAC acceptée → `admin:true` sur le même port, le clic DOM et le rechargement avec Chrome for Testing portable sont validés. Le compte standard a aussi validé `--no-admin` (snapshot `can_elevate=false`, `POST /api/elevate` 403, aucun `consent.exe`) et `--host localhost` (page et API via `localhost`).**
 
 **Résultats du test standard (2026-11-15).** Le Sandbox est livré avec UAC désactivé ; `EnableLUA=1` a été appliqué puis le Sandbox a été redémarré. Un compte `RamScopeStd` (Utilisateurs) et un compte administrateur distinct ont été créés. Les deux scénarios ont produit une vraie fenêtre `consent.exe` (`Credential Dialog Xaml Host`) avec les boutons Oui/Non :
 
@@ -419,8 +419,12 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 | Annulation, `--admin --no-browser --port 8898` | clic Non | instance standard toujours vivante : `admin:false`, `can_elevate:true`, `ok:true` ; `/api/quit` 200 |
 | Route du bouton, `POST /api/elevate` sur défaut 8898 | clic Oui | avant `admin:false`, `can_elevate:true` ; après `admin:true`, `can_elevate:false` sur 8898 ; `original_exited:true` ; `/api/quit` 200 |
 | Clic DOM, Chrome for Testing, défaut 8898 | clic Oui | `button_text=Passer en administrateur`, `click_method=cdp_dom` ; après `admin:true`, `can_elevate:false`, `original_exited:true` ; rechargement : badge `Administrateur`, bouton absent ; `/api/quit` 200 |
+| `--no-admin`, compte standard, 8898 | aucune UAC | `admin:false`, `can_elevate:false` ; snapshot `can_elevate=false` ; `POST /api/elevate` 403 ; `consent_count=0` ; `/api/quit` 200 |
+| `--host localhost`, compte standard, 8899 | aucune UAC | page et API via `localhost` ; `admin:false`, `can_elevate:true` ; `--host localhost` conservé ; `/api/quit` 200 ; alias `127.0.0.1` non joignable |
 
-Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permettre l'automatisation du clic ; le chemin applicatif reste `ShellExecuteW("runas")` puis la relance `--elevated`. Les deux premiers scénarios utilisent `--admin` ; le bouton « Passer en administrateur » a été cliqué dans Chrome for Testing portable, et la page rechargée affiche `Administrateur` sans bouton d'élévation. Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722) ; le test DOM utilise donc Chromium, pas Edge. Les preuves sont conservées dans `sandbox-test/d92/accept-evidence/`, `sandbox-test/d92/cancel-result.txt`, `sandbox-test/d92/endpoint-evidence/` et `sandbox-test/d92/button-evidence/`. Le Sandbox C6 est resté ouvert ; le Sandbox de test d92 a été fermé après relevé.
+Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permettre l'automatisation du clic ; le chemin applicatif reste `ShellExecuteW("runas")` puis la relance `--elevated`. Les deux premiers scénarios utilisent `--admin` ; le bouton « Passer en administrateur » a été cliqué dans Chrome for Testing portable, et la page rechargée affiche `Administrateur` sans bouton d'élévation. Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722) ; le test DOM utilise donc Chromium, pas Edge. Les preuves sont conservées dans `sandbox-test/d92/accept-evidence/`, `sandbox-test/d92/cancel-result.txt`, `sandbox-test/d92/endpoint-evidence/`, `sandbox-test/d92/button-evidence/` et `sandbox-test/d92/remain-evidence/`. Le Sandbox C6 est resté ouvert ; le Sandbox de test d92 a été fermé après relevé.
+
+**Observation `--no-admin`.** Le snapshot expose bien `can_elevate=false`, mais sa liste `notes` contient encore « Mode lecture seule : lance RamScope en administrateur pour appliquer les changements » ; `app.js` ajoute la note stricte, ce qui produit un message contradictoire. À corriger dans un petit lot séparé, avec un test nommé sur le snapshot.
 
 **Défaut de port corrigé.** Avant correction, `/api/elevate` répondait `ok:true` et lançait bien `--elevated`, mais l'instance élevée se rabattait sur 8899 parce que l'ancien serveur occupait encore 8898 ; le relevé après acceptation échouait. `main.rs` réessaie désormais le port demandé pendant 5 s pour `--elevated`. Après rebuild, le test d'endpoint a observé `admin:true`, `can_elevate:false`, `original_exited:true` et `/api/quit` 200 sur 8898.
 
@@ -433,7 +437,8 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 - [x] Les scénarios `--admin` d'acceptation et d'annulation sur compte standard sont consignés ; C6, compte administrateur, ne peut pas valider le consentement UAC.
 - [x] La route `POST /api/elevate` du bouton est testée sur compte standard, y compris le retour sur le même port après acceptation ; le défaut de port est corrigé.
 - [x] Le clic DOM et le rechargement après acceptation sont validés avec Chrome for Testing portable ; Edge n'a pas pu être installé dans le Sandbox.
-- [ ] `--no-admin` sur VM standard reste à rejouer.
+- [x] `--no-admin` sur VM standard : `can_elevate=false`, `POST /api/elevate` 403, aucun `consent.exe` ; un doublon de note du snapshot reste à corriger.
+- [x] `--host localhost` sur VM standard : page et API via `localhost` ; l'alias `127.0.0.1` n'était pas joignable sur cette liaison.
 
 **Effort indicatif :** 0,5 à 0,75 jour, plus le test VM. Aucun changement de dépendance.
 
@@ -499,7 +504,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - [x] Des actions réelles ont été testées dans un Windows Sandbox jetable : `dmwappushservice` Manuel → Désactivé → Manuel, `StartupAppTask` Ready → Disabled → Ready, et une entrée de démarrage `StartupApproved` 3 → 2, avec les API natives `Win32_Service`, `Get-ScheduledTask` et le registre vérifiés avant, après application et après restauration.
 - [x] Le dépôt distant est à jour après accord de Ro, y compris le compte rendu du test de démarrage.
 - [ ] `PLAN.md` contient les commandes, codes retour et artefacts du lot.
-- [x] C7 et C6 sont implémentés et couverts par des tests unitaires locaux ; C6 est validé dans Windows Sandbox pour la propagation des options (`--port`, `--host`, `--no-browser`, `--elevated` unique, `--no-admin` retiré). Le consentement UAC d'un compte standard et le test `localhost` restent à faire.
+- [x] C7 et C6 sont implémentés et couverts par des tests unitaires locaux ; C6 est validé dans Windows Sandbox pour la propagation des options (`--port`, `--host`, `--no-browser`, `--elevated` unique, `--no-admin` retiré). Le consentement UAC, le clic DOM et `--host localhost` ont depuis été testés sur compte standard.
 
 ## 9. Hors périmètre
 
@@ -524,13 +529,16 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 11. Prochaine action
 
-C7, C6, C2 et D9-2a sont traités. D9-2a est fermé avec les preuves UAC, route et DOM ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+C7, C6, C2 et D9-2a sont traités. D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+
+Deux écarts observés pendant ces preuves sont à traiter avant de considérer D9-2a parfaitement fini : le snapshot `--no-admin` contient encore la note générique invitant à relancer en administrateur malgré `can_elevate=false`, et l'alias `127.0.0.1` n'est pas joignable quand le serveur est lié à `localhost`. Le premier est un défaut de message à corriger avec un test nommé ; le second doit être soit documenté comme comportement de liaison, soit uniformisé.
 
 Ordre recommandé pour la suite :
-1. **Clôturer les preuves D9-2a** : rejouer `--no-admin` sur une VM à compte standard, vérifier `--host localhost`, et faire la validation Edge spécifique sur une image où Edge est préinstallé. Ce sont des tests, pas des changements de produit ; ils ne bloquent pas le mode par défaut déjà validé sous Chromium.
+1. **Corriger la note `--no-admin`** et décider du comportement de l'alias `localhost`/`127.0.0.1`, dans un petit commit de suivi D9-2a avec tests de réversion.
 2. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
 3. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
 4. **C9–C13** : robustesse et finitions, avec tests ciblés.
 5. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
+6. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.
