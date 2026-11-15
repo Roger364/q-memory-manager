@@ -527,10 +527,10 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 C7, C6, C2 et D9-2a sont traités. D9-2a est fermé avec les preuves UAC, route et DOM ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
 
 Ordre recommandé pour la suite :
-1. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
-2. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
-3. **C9–C13** : robustesse et finitions, avec tests ciblés.
-4. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
-5. **Validation Edge spécifique** : à faire sur une image ou une VM où Edge est déjà installé ; ce n'est pas un bloqueur du mode par défaut validé sous Chromium.
+1. **Clôturer les preuves D9-2a** : rejouer `--no-admin` sur une VM à compte standard, vérifier `--host localhost`, et faire la validation Edge spécifique sur une image où Edge est préinstallé. Ce sont des tests, pas des changements de produit ; ils ne bloquent pas le mode par défaut déjà validé sous Chromium.
+2. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
+3. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
+4. **C9–C13** : robustesse et finitions, avec tests ciblés.
+5. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.
