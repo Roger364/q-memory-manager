@@ -8,3 +8,7 @@ ramscope/ramscope-data/
 # Espaces de travail des agents (métadonnées de session, conversations)
 .freebuff/
 .workbuddy-ai/
+
+# Preuves locales des tests Windows Sandbox (archives, exécutables, captures)
+# Conservées sur la machine mais jamais publiées avec le dépôt.
+sandbox-test/
