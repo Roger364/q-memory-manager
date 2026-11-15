@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (ex. 1.0.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-sign:
+    name: Build, sign and publish
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check formatting
+        working-directory: ramscope
+        run: cargo fmt --check
+
+      - name: Run tests
+        working-directory: ramscope
+        run: cargo test
+
+      - name: Run clippy
+        working-directory: ramscope
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build release
+        working-directory: ramscope
+        run: cargo build --release
+
+      - name: Verify evidence checksums
+        run: sha256sum -c docs/evidence/SHA256SUMS
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p release
+          cp ramscope/target/release/ramscope.exe "release/ramscope-${{ steps.version.outputs.version }}.exe"
+          cd release && sha256sum "ramscope-${{ steps.version.outputs.version }}.exe" > "ramscope-${{ steps.version.outputs.version }}.exe.sha256"
+
+      - name: Submit to SignPath for signing
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ramscope
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-exe
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Use signed binary if available
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        run: |
+          if [ -f "signed/ramscope-${{ steps.version.outputs.version }}.exe" ]; then
+            cp "signed/ramscope-${{ steps.version.outputs.version }}.exe" "release/ramscope-${{ steps.version.outputs.version }}.exe"
+            cd release && sha256sum "ramscope-${{ steps.version.outputs.version }}.exe" > "ramscope-${{ steps.version.outputs.version }}.exe.sha256"
+            echo "Signed binary used."
+          else
+            echo "Signed binary not found, using unsigned build."
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: RamScope v${{ steps.version.outputs.version }}
+          draft: true
+          prerelease: false
+          files: |
+            release/ramscope-${{ steps.version.outputs.version }}.exe
+            release/ramscope-${{ steps.version.outputs.version }}.exe.sha256
+          body: |
+            ## RamScope v${{ steps.version.outputs.version }}
+
+            Outil Windows 10/11 d'inventaire RAM / services / démarrage / tâches planifiées.
+            Observation et décision, pas nettoyeur automatique.
+
+            ### Téléchargement
+            - `ramscope-${{ steps.version.outputs.version }}.exe` — exécutable unique, sans installation.
+            - SHA-256 dans le fichier `.sha256` joint.
+
+            ### Vérification
+            ```powershell
+            Get-FileHash ramscope-${{ steps.version.outputs.version }}.exe -Algorithm SHA256
+            ```
+
+            ### Notes
+            - Exécuter dans un Windows Sandbox jetable pour tester les actions.
+            - `--no-admin` = lecture seule stricte (pas d'élévation).
+            - `--admin` = élévation UAC au lancement.
+            - Sans option = lecture seule par défaut, élévation à la demande depuis l'interface.
+
+            Voir [SAFETY.md](https://github.com/Roger364/q-memory-manager/blob/main/SAFETY.md) et [SECURITY.md](https://github.com/Roger364/q-memory-manager/blob/main/SECURITY.md).
