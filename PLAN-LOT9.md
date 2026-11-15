@@ -33,9 +33,9 @@ Je ne reprends pas son ordre tel quel :
 |---|---|---|---|
 | C1 — provenance morte et audit figé | Confirmé, nouveau | 9.6 | Ajout d'un chantier distinct, critère de sortie avant distribution |
 | C2 — API locale élevée et état fourni par le client | Confirmé, déjà connu | 9.3 | Précision sur `from`, `was_enabled`, le jeton et le canal local |
-| C3 — origine optionnelle | Confirmé, déjà connu | 9.4 | Inchangé, test explicite |
-| C4 — corps non borné | Confirmé, déjà connu | 9.4 | Inchangé, limite avant lecture |
-| C5 — verrous non indépendants | Confirmé, déjà connu | 9.5 | Inchangé |
+| C3 — origine optionnelle | Corrigé le 2026-11-15 | 9.4 | `Origin` obligatoire, tests nommés |
+| C4 — corps non borné | Corrigé le 2026-11-15 | 9.4 | 1 Mio avant lecture puis lecture bornée |
+| C5 — verrous non indépendants | Corrigé le 2026-11-15 | 9.5 | Garde moteur services/processus ; limites startup/tâche documentées |
 | C6 — options CLI perdues à l'élévation | Confirmé, déjà connu | 9.2 | Inchangé, test d'arguments |
 | C7 — chemins système via l'environnement | Confirmé, déjà connu | 9.1 | Inchangé, priorité sécurité |
 | C8 — tests sur le texte source | Confirmé, nouveau | 9.9 | Chantier dédié, distinct de la CI |
@@ -277,6 +277,8 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 **Critère de sortie.** Un défaut dans `plan::validate` ne suffit plus à contourner tous les refus sur les services, ou la documentation ne parle plus de verrous indépendants.
 
 **Réversion.** Le test d'appel direct à `win::apply` échoue si le contrôle moteur est retiré.
+
+**État (2026-11-15).** `engine_guard` est appelé au début de `win::apply` pour les services et processus protégés, avant d'utiliser la décision de `plan::validate` ; `control_service` vérifie aussi le démarrage. Tests directs sans serveur : `le_moteur_refuse_un_service_protege_sans_plan`, `le_moteur_refuse_de_demarrer_un_service_protege_sans_plan`, `le_moteur_refuse_un_etat_divergent_sans_plan`. Les entrées de démarrage et les tâches n'ont pas de liste globale distincte : la relecture d'état avant écriture reste leur garde moteur, et `SAFETY.md` précise que « deux verrous » ne vaut que pour les services et processus. Le test de non-régression vérifie seulement que `engine_guard` laisse passer un service ordinaire ; il n'exécute pas de modification réelle.
 
 ### 9.6 — Provenance réelle des règles : C1
 

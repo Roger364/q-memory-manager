@@ -19,7 +19,7 @@ Un chiffre élevé n'est pas une preuve qu'un élément est inutile.
 - Terminer un processus dont le chemin d'image ou l'heure de création ne correspond plus à ce qui a été analysé : le PID est rouvert et son identité revérifiée avant la terminaison.
 - Appliquer une action sans droits administrateur.
 
-Ces refus existent à deux niveaux : validation dans `src/plan.rs`, garde-fous dans `src/win.rs`. Ils restent actifs même si l'interface est contournée.
+Ces refus existent à deux niveaux pour les services et les processus : validation dans `src/plan.rs`, garde-fous dans `src/win.rs`. Ils restent actifs même si l'interface est contournée. Pour les entrées de démarrage et les tâches, il n'existe pas de liste de protection distincte : `plan::validate` valide l'action, puis le moteur revérifie l'état courant avant l'écriture ; la formulation « deux verrous » ne s'applique donc pas à ces deux types.
 
 ## Réversible, partiellement réversible, irréversible
 

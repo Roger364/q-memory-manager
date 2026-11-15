@@ -1560,8 +1560,12 @@ fn apply_service(name: &str, target: StartType) -> Result<(), String> {
 }
 
 fn control_service(name: &str, stop: bool) -> Result<(), String> {
-    if stop && rules::is_protected_service(name) {
-        return Err("service vital : arrêt refusé par RamScope".into());
+    if rules::is_protected_service(name) {
+        return Err(if stop {
+            "service vital : arrêt refusé par RamScope".into()
+        } else {
+            "service vital : démarrage refusé par RamScope".into()
+        });
     }
     unsafe {
         let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT);
@@ -1723,11 +1727,47 @@ fn kill_process(pid: u32, name: &str, image_path: &str, created_at: u64) -> Resu
     }
 }
 
+/// Garde-fou moteur indépendant de `plan::validate`. Il protège les cibles
+/// disposant d'une liste de verrouillage (services et processus). Les entrées
+/// de démarrage et les tâches n'ont pas de liste distincte : leur relecture
+/// d'état reste la garde du moteur, et `plan::validate` la validation amont.
+fn engine_guard(action: &Action) -> Option<String> {
+    match action {
+        Action::Service { name, .. } if rules::is_protected_service(name) => {
+            Some("Service vital : modification refusée par le moteur.".into())
+        }
+        Action::StopService { name } if rules::is_protected_service(name) => {
+            Some("Service vital : arrêt refusé par le moteur.".into())
+        }
+        Action::StartService { name } if rules::is_protected_service(name) => {
+            Some("Service vital : démarrage refusé par le moteur.".into())
+        }
+        Action::Kill { pid, name, .. } if rules::is_protected_process(name) || *pid <= 8 => {
+            Some("Processus vital : terminaison refusée par le moteur.".into())
+        }
+        Action::Kill { pid, .. } if *pid == std::process::id() => {
+            Some("RamScope ne peut pas se terminer lui-même.".into())
+        }
+        _ => None,
+    }
+}
+
 /// Applique une liste d'actions et construit les entrées de rollback.
 pub fn apply(actions: &[Action]) -> Vec<RollbackEntry> {
     let verdicts = plan::validate(actions, unsafe { GetCurrentProcessId() });
     let mut entries = Vec::new();
     for (a, verdict) in actions.iter().zip(verdicts) {
+        // Garde-fou moteur indépendant de `plan::validate`.
+        if let Some(message) = engine_guard(a) {
+            entries.push(RollbackEntry {
+                label: a.describe(),
+                done: a.clone(),
+                undo: None,
+                ok: false,
+                message,
+            });
+            continue;
+        }
         // garde-fous serveur, indépendants de l'interface
         if !verdict.allowed {
             entries.push(RollbackEntry {
@@ -2011,6 +2051,57 @@ mod tests {
         let merged = merge_tasks(direct, fallback);
         let paths: Vec<&str> = merged.iter().map(|t| t.path.as_str()).collect();
         assert_eq!(paths, vec!["\\A", "\\B", "\\C"]);
+    }
+
+    #[test]
+    fn le_moteur_refuse_un_service_protege_sans_plan() {
+        let action = Action::Service {
+            name: "RpcSs".into(),
+            start: StartType::Disabled,
+            from: Some(StartType::Auto),
+        };
+        let entries = apply(&[action]);
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].ok);
+        assert!(entries[0].message.contains("moteur"));
+        let ordinary = Action::Service {
+            name: "Spooler".into(),
+            start: StartType::Disabled,
+            from: Some(StartType::Auto),
+        };
+        assert!(engine_guard(&ordinary).is_none());
+    }
+
+    #[test]
+    fn le_moteur_refuse_de_demarrer_un_service_protege_sans_plan() {
+        let action = Action::StartService {
+            name: "RpcSs".into(),
+        };
+        let entries = apply(&[action]);
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].ok);
+        assert!(entries[0].message.contains("moteur"));
+    }
+
+    #[test]
+    fn le_moteur_refuse_un_etat_divergent_sans_plan() {
+        let courant = current_service_start("Spooler").expect("service Spooler présent");
+        let attendu = match courant {
+            StartType::Auto => StartType::Manual,
+            StartType::Manual => StartType::Disabled,
+            StartType::Delayed => StartType::Auto,
+            StartType::Disabled => StartType::Auto,
+        };
+        assert_ne!(courant, attendu);
+        let action = Action::Service {
+            name: "Spooler".into(),
+            start: StartType::Disabled,
+            from: Some(attendu),
+        };
+        let entries = apply(&[action]);
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].ok);
+        assert!(entries[0].message.contains("état du service"));
     }
 
     #[test]
