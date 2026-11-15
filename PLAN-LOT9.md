@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service et de tâche planifiée, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ce test est inclus. C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -223,8 +223,9 @@ Les tests unitaires couvrent la fonction pure et le moteur ; ce test HTTP couvre
 
 - **Service.** `dmwappushservice` a été choisi parmi les actions proposées : `manual` avant, `disabled` après `POST /api/apply` (`200`), confirmé par `Win32_Service.StartMode=Disabled`. Le point `526d88c293ac7808` a ensuite été restauré par `POST /api/restore` (`200`) : snapshot et `Win32_Service.StartMode` revenus à `manual`/`Manual`.
 - **Tâche planifiée.** Le premier essai a révélé un défaut réel : la tâche `\Microsoft\Windows\Application Experience\StartupAppTask` était proposée depuis le repli `schtasks`, mais `current_task_enabled` ne lisait que `System32\Tasks`, donc l'application répondait « tâche introuvable ». La lecture d'état utilise désormais le même repli `schtasks /query /tn <chemin> /xml`. Après reconstruction, la tâche est passée de `Ready` à `Disabled` (`POST /api/apply`, `200`), puis de `Disabled` à `Ready` après restauration (`POST /api/restore`, `200`, point `145b6b0780efdd93`). L'état natif a été vérifié avec `Get-ScheduledTask` avant, après application et après restauration.
+- **Entrée de démarrage.** Aucune entrée proposée n'était présente dans l'image du Sandbox ; le test a créé une entrée HKCU `RamScopeC2StartupTest` (commande `spotify.exe`) pour exercer le mécanisme réel `StartupApproved`. L'état natif avant était activé avec une valeur d'approbation absente ; après `POST /api/apply` (`200`), la valeur est passée à `3` (désactivée), puis à `2` (activée) après `POST /api/restore` (`200`, point `ae9d473adf0a7a32`). L'entrée de test et sa valeur d'approbation ont été supprimées après vérification ; le Run original n'a pas été modifié.
 
-Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sandbox est resté ouvert. Limites : un seul service et une seule tâche, compte Sandbox administrateur, pas de test du consentement UAC standard, ni des actions startup/processus réelles.
+Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sandbox est resté ouvert. Limites : un seul service, une seule tâche et une entrée de démarrage synthétique, compte Sandbox administrateur, pas de test du consentement UAC standard ni d'action processus réelle.
 
 ### 9.4 — Origine et taille des requêtes : C3, C4
 
@@ -404,15 +405,15 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
-- [x] La CI est verte sur `f7dec15` : run Windows `43657943489`, toutes les étapes au vert.
+- [x] La CI est verte sur `c2922b6` : run Windows `43661504033`, toutes les étapes au vert.
 - [ ] C1 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
 - [ ] C3–C6 et C14 sont corrigés ou explicitement acceptés dans `SAFETY.md`.
 - [ ] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
 - [ ] La documentation ne promet plus de verrou, d'authentification ou de garantie non testée.
-- [x] Des actions réelles ont été testées dans un Windows Sandbox jetable : `dmwappushservice` Manuel → Désactivé → Manuel, et `StartupAppTask` Ready → Disabled → Ready, avec les API natives `Win32_Service` et `Get-ScheduledTask` vérifiées avant, après application et après restauration.
-- [x] Le dépôt distant est à jour après accord de Ro, y compris le correctif de repli des tâches.
+- [x] Des actions réelles ont été testées dans un Windows Sandbox jetable : `dmwappushservice` Manuel → Désactivé → Manuel, `StartupAppTask` Ready → Disabled → Ready, et une entrée de démarrage `StartupApproved` 3 → 2, avec les API natives `Win32_Service`, `Get-ScheduledTask` et le registre vérifiés avant, après application et après restauration.
+- [x] Le dépôt distant est à jour après accord de Ro, y compris le compte rendu du test de démarrage.
 - [ ] `PLAN.md` contient les commandes, codes retour et artefacts du lot.
 - [x] C7 et C6 sont implémentés et couverts par des tests unitaires locaux ; C6 est validé dans Windows Sandbox pour la propagation des options (`--port`, `--host`, `--no-browser`, `--elevated` unique, `--no-admin` retiré). Le consentement UAC d'un compte standard et le test `localhost` restent à faire.
 
