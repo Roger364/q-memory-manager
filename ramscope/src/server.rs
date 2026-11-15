@@ -4,6 +4,7 @@
 use crate::model::*;
 use crate::platform::Backend;
 use crate::util;
+use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -19,6 +20,9 @@ const CSS: &str = include_str!("web/style.css");
 const CSP: &str = "default-src 'self'; script-src 'self'; \
 style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; \
 frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+
+/// Taille maximale d'un corps de mutation accepté par le serveur.
+const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 /// Note produite par la collecte lorsqu'elle tourne sans droits administrateur.
 /// Le backend ne connaît pas la politique CLI ; le serveur doit la retirer en
@@ -125,6 +129,31 @@ fn origin_allowed(origin: &str, host: &str) -> bool {
     rest.eq_ignore_ascii_case(host)
 }
 
+/// Une mutation exige une origine : l'absence d'en-tête n'est jamais acceptée.
+fn mutation_origin_allowed(origin: &str, host: &str) -> bool {
+    !origin.is_empty() && origin_allowed(origin, host)
+}
+
+/// `Sec-Fetch-Site` est optionnel pour les clients non navigateur, mais s'il
+/// est présent il ne peut pas décrire une requête cross-site.
+fn fetch_site_allowed(site: &str) -> bool {
+    site.is_empty() || site.eq_ignore_ascii_case("same-origin")
+}
+
+/// Vérifie l'en-tête `Content-Length` avant toute lecture. Une valeur absente
+/// est acceptée : la lecture réelle est de toute façon bornée par `take`.
+fn content_length_check(raw: &str) -> Result<(), (u16, &'static str)> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(());
+    }
+    match raw.parse::<u64>() {
+        Ok(n) if n <= MAX_BODY_BYTES as u64 => Ok(()),
+        Ok(_) => Err((413, "corps de requête trop volumineux (max 1 Mio)")),
+        Err(_) => Err((400, "Content-Length invalide")),
+    }
+}
+
 /// Comparaison de jeton sans sortie anticipée sur le contenu.
 fn token_matches(given: &str, expected: &str) -> bool {
     let (a, b) = (given.as_bytes(), expected.as_bytes());
@@ -227,21 +256,29 @@ fn handle(app: &App, mut req: Request) {
         return err(req, 405, "méthode non autorisée");
     }
 
-    // --- garde-fou 3 : origine exacte pour toute mutation ---
-    if let Some(o) = req
-        .headers()
-        .iter()
-        .find(|h| h.field.equiv("Origin"))
-        .map(|h| h.value.as_str().to_string())
-    {
-        if !origin_allowed(&o, &host) {
-            return err(req, 403, "origine refusée");
-        }
+    // --- garde-fou 3 : origine obligatoire et exacte pour toute mutation ---
+    let origin = header_value(&req, "Origin");
+    if !mutation_origin_allowed(&origin, &host) {
+        return err(req, 403, "origine obligatoire ou refusée");
+    }
+    if !fetch_site_allowed(&header_value(&req, "Sec-Fetch-Site")) {
+        return err(req, 403, "requête cross-site refusée");
     }
 
+    // --- garde-fou 4 : taille bornée avant lecture et pendant la lecture ---
+    if let Err((code, message)) = content_length_check(&header_value(&req, "Content-Length")) {
+        return err(req, code, message);
+    }
     let mut body = String::new();
-    if req.as_reader().read_to_string(&mut body).is_err() {
+    let read = {
+        let mut reader = req.as_reader().take(MAX_BODY_BYTES as u64 + 1);
+        reader.read_to_string(&mut body)
+    };
+    if read.is_err() {
         return err(req, 400, "corps de requête illisible");
+    }
+    if body.len() > MAX_BODY_BYTES {
+        return err(req, 413, "corps de requête trop volumineux (max 1 Mio)");
     }
 
     match path.as_str() {
@@ -603,6 +640,40 @@ mod tests {
         ));
         assert!(!origin_allowed("https://127.0.0.1:8765", "127.0.0.1:8765"));
         assert!(!origin_allowed("null", "127.0.0.1:8765"));
+    }
+
+    #[test]
+    fn une_mutation_sans_origine_est_refusee() {
+        assert!(!mutation_origin_allowed("", "127.0.0.1:8765"));
+        assert!(!mutation_origin_allowed("null", "127.0.0.1:8765"));
+        assert!(mutation_origin_allowed(
+            "http://127.0.0.1:8765",
+            "127.0.0.1:8765"
+        ));
+    }
+
+    #[test]
+    fn une_origine_cross_site_est_refusee() {
+        assert!(fetch_site_allowed(""));
+        assert!(fetch_site_allowed("same-origin"));
+        assert!(fetch_site_allowed("SAME-ORIGIN"));
+        assert!(!fetch_site_allowed("cross-site"));
+        assert!(!fetch_site_allowed("same-site"));
+    }
+
+    #[test]
+    fn un_corps_trop_volumineux_est_refuse_avant_lecture() {
+        assert_eq!(content_length_check(""), Ok(()));
+        assert_eq!(content_length_check("0"), Ok(()));
+        assert_eq!(content_length_check(&MAX_BODY_BYTES.to_string()), Ok(()));
+        assert_eq!(
+            content_length_check(&(MAX_BODY_BYTES + 1).to_string()),
+            Err((413, "corps de requête trop volumineux (max 1 Mio)"))
+        );
+        assert_eq!(
+            content_length_check("pas-un-nombre"),
+            Err((400, "Content-Length invalide"))
+        );
     }
 
     #[test]

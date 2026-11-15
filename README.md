@@ -95,8 +95,9 @@ Hors Windows, `ramscope-data\` dans le répertoire courant, pour le développeme
 
 - Écoute uniquement sur la boucle locale (`127.0.0.1` ou `localhost`) ; toute autre adresse est refusée au démarrage.
 - L'en-tête `Host` est validé contre les adresses de la session : une requête portant un autre hôte, y compris par rebinding DNS, reçoit `403`, pages comprises.
-- Toute route `/api/` exige un jeton de session généré par le CSPRNG du système (`BCryptGenRandom`, 32 octets) ; l'origine des mutations est comparée exactement au `Host`, sans comparaison par suffixe.
+- Toute route `/api/` exige un jeton de session généré par le CSPRNG du système (`BCryptGenRandom`, 32 octets) ; toute mutation exige un `Origin` présent et comparé exactement au `Host`, sans comparaison par suffixe (`403` si absent ou invalide). Un `Sec-Fetch-Site` présent et différent de `same-origin` est aussi refusé.
 - Le jeton reste présent dans la page servie, mais uniquement pour un `Host` autorisé. Il protège la session navigateur : il n'authentifie pas un processus local, qui peut lire la page et récupérer le jeton. Voir la décision D9-1 dans `SAFETY.md`.
+- Le corps d'une mutation est limité à **1 Mio** : `Content-Length` est contrôlé avant lecture, puis la lecture est bornée par `take` ; un dépassement reçoit `413`, y compris sans `Content-Length` ou en chunked.
 - `/api/apply` recollecte le snapshot et refuse une action sans état observé, avec un état divergent, ou qui n'est pas exactement celle proposée par l'analyse courante. Le démarrage d'un service est réservé à la restauration interne.
 - Le lancement par défaut ne demande pas l'UAC ; `--admin` est le seul mode qui l'élève au démarrage. `--no-admin` interdit `/api/elevate` côté serveur, et l'interface masque le bouton d'élévation.
 - La politique de contenu interdit désormais les scripts inline (`script-src 'self'`) : le jeton est lu dans une meta et le bouton d'élévation est lié dans `app.js`. Les styles inline restent nécessaires aux largeurs et couleurs calculées ; `style-src 'unsafe-inline'` est conservé pour cette raison.
