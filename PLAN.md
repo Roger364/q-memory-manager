@@ -745,7 +745,7 @@ La version du plan est corrigée en **3.2**, le décompte des tests est remis da
 | Commande / contrôle | Code retour | Observation |
 |---|---:|---|
 | `cargo fmt --check` (depuis `ramscope/`) | 0 | formatage conforme |
-| `cargo test` | 0 | 74 tests, 74 réussis ; nouveaux tests C3/C4 et C5 nommés ci-dessous |
+| `cargo test` | 0 | 75 tests, 75 réussis ; nouveaux tests C3/C4, C5 et test HTTP réel nommés ci-dessous |
 | `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
 | `cargo build --release` | 0 | binaire produit |
 | Démo HTTP — `POST /api/apply` sans `Origin` | 403 | corps JSON `{"error":"origine obligatoire ou refusée"}` |
@@ -754,6 +754,6 @@ La version du plan est corrigée en **3.2**, le décompte des tests est remis da
 | Démo HTTP — `POST /api/apply`, corps de 1 048 577 octets en chunked | 413 | la lecture bornée couvre l'absence de `Content-Length` |
 | Démo HTTP — `POST /api/apply`, `Origin` correct, corps `{}` | 400 | « aucune action demandée » : l'origine correcte atteint bien le gestionnaire |
 
-**Tests de réversion.** `une_mutation_sans_origine_est_refusee` échoue si `Origin` redevient optionnel ; `un_corps_trop_volumineux_est_refuse_avant_lecture` échoue si la limite disparaît ; `le_moteur_refuse_un_service_protege_sans_plan` et `le_moteur_refuse_de_demarrer_un_service_protege_sans_plan` appellent directement `win::apply`, sans serveur, et échouent si le garde moteur est retiré ; `le_moteur_refuse_un_etat_divergent_sans_plan` appelle `win::apply` avec un `from` volontairement faux et attend le refus de relecture.
+**Tests de réversion.** `le_serveur_refuse_origine_absente_et_corps_geant_avant_mutation` passe par le vrai `handle` et échoue si le contrôle d'origine, le contrôle de `Content-Length` ou la lecture bornée est retiré ; `une_mutation_sans_origine_est_refusee` échoue si `Origin` redevient optionnel ; `un_corps_trop_volumineux_est_refuse_avant_lecture` échoue si la limite disparaît ; `le_moteur_refuse_un_service_protege_sans_plan` et `le_moteur_refuse_de_demarrer_un_service_protege_sans_plan` appellent directement `win::apply`, sans serveur, et échouent si le garde moteur est retiré ; `le_moteur_refuse_un_etat_divergent_sans_plan` appelle `win::apply` avec un `from` volontairement faux et attend le refus de relecture.
 
 **Limites.** Le test chunked utilise `curl` avec `Transfer-Encoding: chunked` ; il n'a pas été rejoué avec un navigateur. Les tests C5 de service protégé s'arrêtent au garde moteur avant tout appel système ; aucun service réel n'a été modifié. La protection des entrées de démarrage et des tâches reste une validation amont plus une relecture d'état, pas une liste indépendante : c'est désormais la formulation documentée.

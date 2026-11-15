@@ -676,6 +676,102 @@ mod tests {
         );
     }
 
+    fn requete_http(port: u16, requete: &[u8]) -> String {
+        use std::io::Write;
+        use std::net::{Shutdown, TcpStream};
+        let mut flux = TcpStream::connect(("127.0.0.1", port)).expect("connexion locale");
+        flux.set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("timeout de lecture");
+        flux.write_all(requete).expect("envoi de la requête");
+        flux.shutdown(Shutdown::Write).expect("fin d'envoi");
+        let mut reponse = String::new();
+        flux.read_to_string(&mut reponse)
+            .expect("lecture de la réponse");
+        reponse
+    }
+
+    /// Teste le vrai gestionnaire HTTP : retirer les contrôles de `handle`
+    /// fait échouer ce test, même si les helpers purs restent corrects.
+    #[test]
+    fn le_serveur_refuse_origine_absente_et_corps_geant_avant_mutation() {
+        let serveur = Arc::new(Server::http("127.0.0.1:0").expect("serveur de test"));
+        let port = serveur
+            .server_addr()
+            .to_ip()
+            .expect("adresse IP de test")
+            .port();
+        let app = Arc::new(App {
+            backend: Backend::new(true),
+            token: "jeton-de-test".into(),
+            cache: Mutex::new(None),
+            stop: AtomicBool::new(false),
+            can_elevate: false,
+            allowed_hosts: vec![format!("127.0.0.1:{port}")],
+        });
+        let a = app.clone();
+        let s = serveur.clone();
+        let fil = std::thread::spawn(move || {
+            while let Ok(req) = s.recv() {
+                handle(&a, req);
+                if a.stop.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+        });
+
+        let entete = |chemin: &str, origine: bool, longueur: usize, chunked: bool| {
+            let mut h = format!(
+                "POST {chemin} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+                 X-RamScope-Token: jeton-de-test\r\nContent-Type: application/json\r\n"
+            );
+            if origine {
+                h.push_str(&format!("Origin: http://127.0.0.1:{port}\r\n"));
+            }
+            if chunked {
+                h.push_str("Transfer-Encoding: chunked\r\n");
+            } else {
+                h.push_str(&format!("Content-Length: {longueur}\r\n"));
+            }
+            h.push_str("Connection: close\r\n\r\n");
+            h
+        };
+
+        let sans_origine = requete_http(
+            port,
+            format!("{} {{}}", entete("/api/apply", false, 2, false)).as_bytes(),
+        );
+        assert!(
+            sans_origine.contains(" 403 "),
+            "sans Origin : {sans_origine}"
+        );
+
+        let corps_geant = requete_http(
+            port,
+            entete("/api/apply", true, MAX_BODY_BYTES + 1, false).as_bytes(),
+        );
+        assert!(
+            corps_geant.contains(" 413 "),
+            "Content-Length géant : {corps_geant}"
+        );
+
+        let mut chunked = entete("/api/apply", true, 0, true).into_bytes();
+        chunked.extend_from_slice(format!("{:x}\r\n", MAX_BODY_BYTES + 1).as_bytes());
+        chunked.extend(vec![b'x'; MAX_BODY_BYTES + 1]);
+        chunked.extend_from_slice(b"\r\n0\r\n\r\n");
+        let corps_chunked = requete_http(port, &chunked);
+        assert!(
+            corps_chunked.contains(" 413 "),
+            "corps chunked géant : {corps_chunked}"
+        );
+
+        let quitter = requete_http(
+            port,
+            format!("{} {{}}", entete("/api/quit", true, 2, false)).as_bytes(),
+        );
+        assert!(quitter.contains(" 200 "), "arrêt : {quitter}");
+        fil.join().expect("fil du serveur de test");
+    }
+
     #[test]
     fn le_jeton_se_compare_sans_raccourci() {
         assert!(token_matches("abc123", "abc123"));

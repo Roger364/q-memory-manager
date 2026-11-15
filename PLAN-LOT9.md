@@ -255,7 +255,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 **Réversion.** Le test sans `Origin` échoue si le contrôle redevient optionnel.
 
-**État (2026-11-15).** Implémenté dans `server.rs` : `Origin` obligatoire, `Sec-Fetch-Site` cross-site refusé, limite `MAX_BODY_BYTES = 1 Mio`, contrôle de `Content-Length` avant lecture et `take` pour les corps sans longueur/chunked. Tests nommés : `une_mutation_sans_origine_est_refusee`, `une_origine_cross_site_est_refusee`, `un_corps_trop_volumineux_est_refuse_avant_lecture`. Vérification HTTP réelle en démonstration : sans origine 403, origine inconnue 403, `Content-Length` 1 048 577 → 413, corps chunked de même taille → 413, origine correcte + `{}` → 400 « aucune action demandée ». Détail dans `PLAN.md` section 13.
+**État (2026-11-15).** Implémenté dans `server.rs` : `Origin` obligatoire, `Sec-Fetch-Site` cross-site refusé, limite `MAX_BODY_BYTES = 1 Mio`, contrôle de `Content-Length` avant lecture et `take` pour les corps sans longueur/chunked. Tests nommés : `le_serveur_refuse_origine_absente_et_corps_geant_avant_mutation` (vrai `handle`, serveur local), `une_mutation_sans_origine_est_refusee`, `une_origine_cross_site_est_refusee`, `un_corps_trop_volumineux_est_refuse_avant_lecture`. Vérification HTTP réelle en démonstration : sans origine 403, origine inconnue 403, `Content-Length` 1 048 577 → 413, corps chunked de même taille → 413, origine correcte + `{}` → 400 « aucune action demandée ». Détail dans `PLAN.md` section 13.
 
 ### 9.5 — Verrous réellement indépendants : C5
 
