@@ -209,8 +209,11 @@ function renderHead() {
   $('#machine').innerHTML = `<b>${esc(m.computer)}</b> · ${esc(m.os)}<br>${esc(m.user)} · allumé depuis ${dur(m.uptime_secs)} · analyse ${m.duration_ms} ms`;
   let n = (m.notes || []).map(x => `<div class="note">${esc(x)}</div>`).join('');
   if (!m.is_admin) {
-    n += `<div class="note">Pour appliquer les changements, RamScope doit tourner en administrateur.
-      <button class="btn warn sm ml8" id="btnElevate">Passer en administrateur</button></div>`;
+    n += m.can_elevate
+      ? `<div class="note">Pour appliquer les changements, RamScope doit tourner en administrateur.
+      <button class="btn warn sm ml8" id="btnElevate">Passer en administrateur</button></div>`
+      : `<div class="note">Lecture seule stricte : l’élévation est désactivée pour cette session.
+      Relance RamScope sans <code>--no-admin</code> pour l’autoriser.</div>`;
   }
   $('#notes').innerHTML = n;
   const be = $('#btnElevate');
@@ -706,7 +709,12 @@ function actionNote(a) {
   return 'Réversible via le point de restauration.';
 }
 function confirmApply(entries, danger) {
-  if (!S.meta.is_admin) { toast('Droits administrateur requis. Clique sur « Passer en administrateur ».', 'ko'); return; }
+  if (!S.meta.is_admin) {
+    toast(S.meta.can_elevate
+      ? 'Droits administrateur requis. Clique sur « Passer en administrateur ».'
+      : 'Élévation désactivée pour cette session : relance RamScope sans --no-admin.', 'ko');
+    return;
+  }
   if (entries.some(e => e.kind === 'processes') && entries.length > 1) {
     toast('Une terminaison de processus ne peut pas être appliquée dans un lot : traite-la seule, ligne par ligne.', 'ko');
     return;

@@ -71,7 +71,9 @@ Conséquences dans cette version :
 
 ## Droits et surface locale
 
-- L'élévation UAC est demandée au lancement, sauf avec `--demo` ou `--no-admin`.
+- Le lancement par défaut ne demande **pas** l'élévation UAC : RamScope démarre en lecture seule et propose « Passer en administrateur » dans l'interface. L'UAC n'est demandé qu'après ce clic, ou au lancement avec `--admin`.
+- `--no-admin` est strict pour l'élévation : le bouton est masqué et `/api/elevate` répond `403`. Il ne transforme pas une session déjà élevée en session non administrateur ; ne pas lancer `--no-admin` depuis un terminal administrateur si l'on veut garantir un audit sans droits.
+- Une fois l'instance élevée, elle reste administrateur jusqu'à sa fermeture. La réduction structurelle de cette durée (helper one-shot) n'est pas implémentée ; elle est prévue dans le lot séparé D9-2b.
 - L'interface écoute uniquement sur la boucle locale ; toute autre adresse passée à `--host` est refusée au démarrage.
 - L'en-tête `Host` est validé contre les adresses de la session, l'origine est comparée exactement, et toute route `/api/` exige le jeton. Le jeton reste présent dans la page, mais seulement pour un `Host` autorisé.
 - En lecture seule, les tâches planifiées sont lues via `schtasks /query /xml` quand `System32\Tasks` est inaccessible : cela n'élève pas les droits et n'exécute aucune tâche. Le repli appelle l'outil système par chemin absolu et fusionne les lectures partielles par chemin, sans doublon. Le 2026-11-14, les 201 tâches et 167 tâches activées retrouvées correspondaient à `Get-ScheduledTask`.
@@ -80,7 +82,7 @@ Conséquences dans cette version :
 ## Avant une première utilisation réelle
 
 1. Lancer en `--demo` pour voir les écrans et le type d'actions proposées.
-2. Lancer en `--no-admin` pour comparer l'inventaire avec le Gestionnaire des tâches et `services.msc`.
+2. Lancer sans option, ou en `--no-admin` strict, pour comparer l'inventaire avec le Gestionnaire des tâches et `services.msc` sans demander l'UAC.
 3. Pour une application réelle, préférer une machine virtuelle ou un instantané système.
 4. Relire la liste des changements dans la confirmation, en particulier les actions irréversibles.
 

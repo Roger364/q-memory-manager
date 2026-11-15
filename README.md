@@ -20,9 +20,10 @@ Le binaire est produit dans `ramscope\target\release\ramscope.exe`.
 ## Lancer
 
 ```text
-ramscope.exe                 # collecte réelle, élévation UAC demandée
+ramscope.exe                 # collecte réelle, lecture seule ; élévation proposée dans l'interface
+ramscope.exe --admin         # collecte réelle, élévation UAC au lancement
+ramscope.exe --no-admin      # lecture seule stricte, sans aucune élévation
 ramscope.exe --demo          # données simulées, aucun accès à la machine
-ramscope.exe --no-admin      # lecture seule, sans élévation
 ```
 
 | Option | Effet |
@@ -30,11 +31,12 @@ ramscope.exe --no-admin      # lecture seule, sans élévation
 | `--port N` | port d'écoute (8765 par défaut, essaie les 11 suivants s'il est occupé) |
 | `--host ADRESSE` | adresse d'écoute : `127.0.0.1` (défaut) ou `localhost` ; toute autre valeur est refusée au démarrage |
 | `--no-browser` | ne pas ouvrir la fenêtre automatiquement |
-| `--no-admin` | rester en lecture seule, sans demander l'élévation |
+| `--admin` | demander l'élévation UAC au lancement |
+| `--no-admin` | lecture seule stricte : interdit l'élévation, y compris depuis l'interface |
 | `--demo` | données de démonstration, aucun accès réel |
 | `--help` | aide |
 
-Sans `--demo` ni `--no-admin`, RamScope demande l'élévation (UAC) au lancement : modifier un service ou une tâche exige les droits administrateur. En lecture seule, l'inventaire reste consultable mais le serveur refuse toute application.
+Sans option, RamScope démarre en lecture seule et ne demande pas l'UAC. L'inventaire reste consultable ; pour appliquer un changement, clique sur « Passer en administrateur » et accepte l'UAC, ou relance avec `--admin`. `--no-admin` désactive cette demande : le bouton est masqué et `/api/elevate` répond `403`. Un refus UAC lors de `--admin` laisse la session courante en lecture seule.
 
 ## Lire les chiffres
 
@@ -96,6 +98,7 @@ Hors Windows, `ramscope-data\` dans le répertoire courant, pour le développeme
 - Toute route `/api/` exige un jeton de session généré par le CSPRNG du système (`BCryptGenRandom`, 32 octets) ; l'origine des mutations est comparée exactement au `Host`, sans comparaison par suffixe.
 - Le jeton reste présent dans la page servie, mais uniquement pour un `Host` autorisé. Il protège la session navigateur : il n'authentifie pas un processus local, qui peut lire la page et récupérer le jeton. Voir la décision D9-1 dans `SAFETY.md`.
 - `/api/apply` recollecte le snapshot et refuse une action sans état observé, avec un état divergent, ou qui n'est pas exactement celle proposée par l'analyse courante. Le démarrage d'un service est réservé à la restauration interne.
+- Le lancement par défaut ne demande pas l'UAC ; `--admin` est le seul mode qui l'élève au démarrage. `--no-admin` interdit `/api/elevate` côté serveur, et l'interface masque le bouton d'élévation.
 - La politique de contenu interdit désormais les scripts inline (`script-src 'self'`) : le jeton est lu dans une meta et le bouton d'élévation est lié dans `app.js`. Les styles inline restent nécessaires aux largeurs et couleurs calculées ; `style-src 'unsafe-inline'` est conservé pour cette raison.
 
 ## Ce qui n'a pas été testé
@@ -103,6 +106,7 @@ Hors Windows, `ramscope-data\` dans le répertoire courant, pour le développeme
 - C2 a été vérifié en démonstration par des requêtes HTTP et dans Chromium (refus d'un état nul/divergent, refus d'une action hors snapshot), puis par des actions réelles dans un Windows Sandbox jetable. Le service `dmwappushservice` est passé de Manuel à Désactivé, la tâche `StartupAppTask` de Ready à Disabled, et une entrée de démarrage de test a vu sa valeur native `StartupApproved` passer de l'état activé (valeur absente) à `3` (désactivée), puis à `2` (activée) ; `Win32_Service.StartMode`, `Get-ScheduledTask` et le registre ont confirmé les changements, et les restaurations ont ramené les objets à leur état initial. L'entrée de démarrage synthétique a ensuite été supprimée. Le test de tâche a aussi révélé puis corrigé la lecture d'état via le repli `schtasks` quand `System32\Tasks` est inaccessible. Limites : un service, une tâche et une entrée de démarrage synthétique, compte Sandbox administrateur, pas de consentement UAC standard ni d'action processus réelle.
 - La collecte réelle a été exécutée le 2026-11-14 en lecture seule (`--no-admin`). La mémoire totale, les 289 services et les 201 tâches planifiées correspondent aux API Windows (`Get-Service`, `Get-ScheduledTask`) ; les 7 entrées de démarrage sont plus complètes que les 6 de `Win32_StartupCommand`, car RamScope lit aussi le registre 32 bits. Le chemin administrateur qui lit directement les XML des tâches n'a pas été comparé au repli `schtasks`, et le repli ajoute environ 0,6 à 0,8 s à la collecte en lecture seule.
 - Le repli des tâches utilise `%SystemRoot%\System32\schtasks.exe` par chemin absolu ; les ACL partielles sont fusionnées par chemin et dédupliquées.
-- Les 57 tests unitaires couvrent la validation des actions, l'identité simulée d'un processus, l'agrégation des gains par hôte, la nature des gains dans le rapport, l'audit des 601 règles (unicité, casse, modes, sources, verrous), le faux positif `php`/`hp` et l'absence d'action des heuristiques sans source. Les refus d'identité réelle (`win.rs`) restent non exercés sur un processus vivant ; le delta de mémoire mesuré a été vérifié en démonstration, où la mémoire simulée ne varie pas. La revue visuelle de l'étape 5 a ouvert les panneaux de détails et les modales dans Chromium ; elle n'a pas fait de parcours clavier avec de vraies frappes ni rouvert les fichiers exportés. Les tests `decode_une_tache_xml`, `lit_l_etat_natif_d_une_tache_pour_le_rollback`, `le_repli_couvre_une_acl_partielle`, `fusionne_les_taches_par_chemin_sans_doublon` et `decode_la_sortie_de_schtasks` couvrent le parseur, la décision de repli, la déduplication et le wrapper, mais pas l'injection d'une ACL Windows réelle ni une sortie réelle de `schtasks` en échec. Le test réel en Sandbox a couvert le repli de lecture d'état. Le détail des commandes et des codes retour figure dans `PLAN.md`.
+- Les tests unitaires couvrent la validation des actions, l'identité simulée d'un processus, l'agrégation des gains par hôte, la nature des gains dans le rapport, l'audit des 601 règles (unicité, casse, modes, sources, verrous), le faux positif `php`/`hp` et l'absence d'action des heuristiques sans source. Les refus d'identité réelle (`win.rs`) restent non exercés sur un processus vivant ; le delta de mémoire mesuré a été vérifié en démonstration, où la mémoire simulée ne varie pas. La revue visuelle de l'étape 5 a ouvert les panneaux de détails et les modales dans Chromium ; elle n'a pas fait de parcours clavier avec de vraies frappes ni rouvert les fichiers exportés. Les tests `decode_une_tache_xml`, `lit_l_etat_natif_d_une_tache_pour_le_rollback`, `le_repli_couvre_une_acl_partielle`, `fusionne_les_taches_par_chemin_sans_doublon` et `decode_la_sortie_de_schtasks` couvrent le parseur, la décision de repli, la déduplication et le wrapper, mais pas l'injection d'une ACL Windows réelle ni une sortie réelle de `schtasks` en échec. Le test réel en Sandbox a couvert le repli de lecture d'état. Le détail des commandes et des codes retour figure dans `PLAN.md`.
+- D9-2a est couvert par des tests unitaires : défaut sans UAC, `--admin`, `--no-admin` strict, conflit des deux options, relance `--elevated` sans boucle et propagation de `can_elevate` au snapshot. Le consentement UAC et son annulation ont été testés le 2026-11-15 dans un Windows Sandbox avec un **compte standard** : acceptation réelle (`admin:true`, `can_elevate:false`) et annulation réelle (`admin:false`, `can_elevate:true`), avec `/api/quit` 200 dans les deux cas. Le Sandbox étant livré avec UAC désactivé, `EnableLUA=1` a été appliqué et le Sandbox redémarré ; le bureau sécurisé a été désactivé uniquement pour automatiser le clic. La route `POST /api/elevate` du bouton a aussi été testée sur compte standard : elle a déclenché une UAC acceptée et l'instance élevée est restée sur le port 8898 (`admin:true`, `can_elevate:false`, `/api/quit` 200). Ce test a révélé puis fait corriger un conflit de port lors de la relance élevée. Le clic DOM et le rechargement ont été exécutés avec Chrome for Testing portable : clic sur « Passer en administrateur », UAC acceptée, puis page rechargée affichant `Administrateur` sans bouton d'élévation. Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722) ; le test DOM utilise donc Chromium, pas Edge. Les preuves sont dans `sandbox-test/d92/`.
 
 Voir `SAFETY.md` pour les limites d'usage et `PLAN.md` pour le plan de travail et les défauts connus.

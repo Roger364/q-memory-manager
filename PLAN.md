@@ -711,3 +711,27 @@ La revue WorkBuddy a été rédigée sur `d08e412`, puis commitée sous `ecccadc
 | Comptage des tests (journal 7.12, recoupé par la revue) | — | 43 tests : 13 dans `plan.rs`, 12 dans `rules.rs` |
 
 La version du plan est corrigée en **3.2**, le décompte des tests est remis dans le bon ordre, et les mentions de l'ancien dépôt ont été retirées de la documentation. Le plan d'améliorations proposé est séparé dans `PLAN-LOT9.md` pour ne pas mélanger le journal historique et le travail à venir. Le push du lot 9 clôt cette correction en fast-forward.
+
+## 12. D9-2a — réduction de l'élévation UAC (2026-11-15)
+
+**Changement.** Le lancement sans option démarre en lecture seule et ne demande plus l'UAC. `--admin` demande l'élévation au lancement ; `--no-admin` est strict (bouton masqué et `/api/elevate` en `403`). La relance retire `--admin` et `--no-admin`, ajoute un seul `--elevated`, et le serveur expose `can_elevate` dans le snapshot et `/api/health`. Le consentement UAC a été testé sur un compte standard dans un Windows Sandbox de test le 2026-11-15 (voir les lignes UAC et route du bouton ci-dessous) ; le Sandbox C6, lui, reste administrateur.
+
+**Défaut découvert et corrigé.** La relance élevée depuis `/api/elevate`, pendant que le serveur lecture seule écoute encore, se rabattait sur le port suivant (8899 au lieu de 8898) : l'ancienne page et le nouveau serveur n'étaient plus sur le même port. `main.rs` réessaie désormais le port demandé pendant 5 s pour une instance `--elevated` avant de changer de port. Le test d'endpoint ci-dessous valide ce comportement après rebuild.
+
+| Commande / contrôle | Code retour | Observation |
+|---|---:|---|
+| `cargo fmt --check` (depuis `ramscope/`) | 0 | formatage conforme |
+| `cargo test` | 0 | 67 tests, 67 réussis |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
+| `cargo build --release` | 0 | binaire produit |
+| `ramscope.exe --help` | 0 | `--admin` et `--no-admin` documentés |
+| Réel — défaut, `--no-browser --port 8899` | 200 | `/api/health` : `admin:false`, `can_elevate:true`, `demo:false` ; `/api/quit` : 200 |
+| Réel — `--no-admin --no-browser --port 8899` | 200 / 403 | `/api/health` : `admin:false`, `can_elevate:false` ; `POST /api/elevate` : 403 ; `/api/quit` : 200 |
+| Standard + UAC accepté — `--admin --no-browser --port 8899` | 200 | `consent.exe` réel (boutons Oui/Non), clic Oui ; `/api/health` : `admin:true`, `can_elevate:false`, `ok:true` ; processus standard sorti ; `/api/quit` : 200 |
+| Standard + UAC annulé — `--admin --no-browser --port 8898` | 200 | `consent.exe` réel, clic Non ; `/api/health` : `admin:false`, `can_elevate:true`, `ok:true` ; processus standard toujours vivant ; `/api/quit` : 200 |
+| Standard + route du bouton — `POST /api/elevate` sur défaut 8898 | 200 | avant : `admin:false`, `can_elevate:true` ; UAC réel clic Oui ; instance élevée sur 8898 : `admin:true`, `can_elevate:false` ; `original_exited:true` ; `/api/quit` : 200 |
+| Standard + clic DOM — Chrome for Testing portable, défaut 8898 | 200 | `button_text=Passer en administrateur`, `click_method=cdp_dom` ; UAC réel clic Oui ; après : `admin:true`, `can_elevate:false`, `original_exited:true` ; rechargement CDP : badge `Administrateur`, bouton d'élévation absent ; `/api/quit` : 200 |
+
+**Environnement du test standard.** Windows Sandbox jetable, compte `RamScopeStd` (Utilisateurs), administrateur distinct `RamScopeAdmin` ; UAC activé dans le Sandbox par `EnableLUA=1` puis redémarrage (le Sandbox est livré avec UAC désactivé). Le bureau sécurisé a été désactivé uniquement pour automatiser le clic ; le chemin applicatif reste `ShellExecuteW("runas")` puis `--elevated`. Les preuves sont dans `sandbox-test/d92/accept-evidence/`, `sandbox-test/d92/cancel-result.txt`, `sandbox-test/d92/endpoint-evidence/` et `sandbox-test/d92/button-evidence/`.
+
+**Limites.** Edge n'a pas pu être installé dans le Sandbox : le MSI officiel signé échoue dans son action `DoInstall` avec **1603 / 1722**, et le Sandbox ne fournit ni Edge ni Chrome. Le clic DOM et le rechargement ont donc été exécutés avec **Chrome for Testing portable** (même moteur Chromium), pas avec Edge. L'installation Edge n'est pas une exigence du produit ; ce point est une limite du harnais de test. L'automatisation du clic UAC a nécessité un processus SYSTEM dans la session interactive ; elle ne fait pas partie du produit. Le helper élevé one-shot (D9-2b) n'est pas implémenté : une fois élevée, l'instance reste administrateur jusqu'à sa fermeture. `--no-admin` désactive l'élévation ; il ne rétrograde pas une session déjà lancée en administrateur. Le compte standard et les identifiants sont propres au Sandbox de test et ne sont pas des données de production.

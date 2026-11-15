@@ -273,12 +273,15 @@ pub fn elevate() -> bool {
 }
 
 /// Reconstruit les arguments de l'instance élevée. `--elevated` est ajouté
-/// une seule fois et `--no-admin` est retiré : demander l'élévation est
-/// incompatible avec un démarrage en lecture seule.
+/// une seule fois ; `--admin` et `--no-admin` sont retirés pour que la relance
+/// ne redemande pas l'UAC et ne conserve pas un mode strict incompatible avec
+/// l'instance élevée.
 fn elevated_args(args: &[String]) -> Vec<String> {
     let mut out: Vec<String> = args
         .iter()
-        .filter(|a| a.as_str() != "--elevated" && a.as_str() != "--no-admin")
+        .filter(|a| {
+            a.as_str() != "--elevated" && a.as_str() != "--admin" && a.as_str() != "--no-admin"
+        })
         .cloned()
         .collect();
     out.push("--elevated".into());
@@ -1485,6 +1488,7 @@ pub fn collect() -> Snapshot {
             os: os_name(),
             uptime_secs: unsafe { GetTickCount64() } / 1000,
             is_admin: admin,
+            can_elevate: false,
             demo: false,
             collected_at: crate::util::now_string(),
             duration_ms: t0.elapsed().as_millis() as u64,
@@ -1948,13 +1952,14 @@ mod tests {
     }
 
     #[test]
-    fn elevation_conserve_les_options_et_retire_no_admin() {
+    fn elevation_conserve_les_options_et_retire_admin_et_no_admin() {
         let args: Vec<String> = [
             "--port",
             "8917",
             "--host",
             "localhost",
             "--no-browser",
+            "--admin",
             "--no-admin",
             "--elevated",
         ]
@@ -1965,6 +1970,7 @@ mod tests {
         assert!(params.contains("--port 8917"));
         assert!(params.contains("--host localhost"));
         assert!(params.contains("--no-browser"));
+        assert!(!params.contains("--admin"));
         assert!(!params.contains("--no-admin"));
         assert_eq!(params.matches("--elevated").count(), 1);
     }

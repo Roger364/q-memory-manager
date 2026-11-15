@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 67 tests unitaires ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -74,7 +74,9 @@ Conséquences retenues pour la v1 :
 
 ### D9-2 — Conserver l'élévation UAC par défaut ?
 
-Décision encore ouverte. C2 ne change pas le mode d'élévation actuel : il réduit la surface de l'API sans modifier le lancement. Si l'usage recommandé devient `--no-admin`, il faudra le dire clairement dans le README et ne plus présenter l'élévation comme le chemin normal. Avant une distribution publique, étudier une élévation explicite et une session administrateur temporaire ; c'est un lot séparé, pas une condition de C2.
+**Décision validée le 2026-11-15 (option A) et implémentée :** ne plus élever au lancement par défaut. Le lancement normal devient une session de lecture seule ; l'utilisateur demande explicitement l'élévation depuis l'interface après avoir consulté l'inventaire. Un nouveau `--admin` permet l'élévation au lancement pour ceux qui la veulent dès le départ, et `--no-admin` devient un mode strict qui interdit toute élévation ultérieure.
+
+Cette étape réduit la durée d'exposition avant l'UAC, pas encore la durée de la session élevée. Un helper d'application one-shot, qui ne garderait les droits administrateur que quelques secondes, reste un lot séparé (D9-2b) : il touche au canal local et à l'authentification, et ne doit pas être mélangé à C2/D9-1. Le détail du lot est en **9.11** ; le test UAC sur compte standard a été exécuté le 2026-11-15.
 
 ### D9-3 — API HTTP ou canal local dédié ?
 
@@ -106,8 +108,9 @@ C8 ne signifie pas automatiser tout le navigateur. Le plan privilégie des fonct
 | 8 | Robustesse et finitions | C9–C13 | 0,5 j |
 | 9 | Tests comportementaux | C8 | 1 j |
 | 10 | Industrialisation et licence | C15 + état CI | 0,1 j |
+| 11 | Réduction de l'élévation UAC | D9-2a | 0,5–0,75 j |
 
-Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision sur le canal local.
+Total indicatif : **7 à 8 jours**, hors tests réels en VM et hors décision sur le canal local et le helper one-shot.
 
 ## 5. Chantiers détaillés
 
@@ -364,6 +367,84 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 **Critère de sortie.** La décision de licence est consignée ; la CI reste verte ; le dépôt distant est synchronisé.
 
+### 9.11 — Réduction de l'élévation UAC : D9-2a
+
+**État :** implémenté le 2026-11-15, tests unitaires au vert (67 tests). Le consentement UAC sur un compte standard a été testé le 2026-11-15 : acceptation et annulation réelles, avec `admin:true` après acceptation et `admin:false` / `can_elevate:true` après annulation. La route `POST /api/elevate` du bouton a aussi été testée ; elle a révélé puis fait corriger le conflit de port de la relance élevée. Le clic DOM et le rechargement de la page ont été validés avec Chrome for Testing portable : Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722).
+
+**Décision validée le 2026-11-15 (option A).** Le lancement sans option devient une session de **lecture seule** ; l'élévation n'est demandée qu'après une action explicite de l'utilisateur.
+
+**Alternatives examinées.**
+- **A. Lecture seule par défaut + `--admin` (recommandée).** Réduit l'exposition initiale, garde un parcours simple pour appliquer après revue, et laisse un mode strict pour l'audit.
+- **B. Statu quo.** Élévation automatique au lancement, avec `--no-admin` strict. Changement minimal, mais ne réduit pas la durée d'exposition et ne répond pas à D9-2.
+- **C. Lecture seule sans `--admin`.** Plus simple, mais casse les scripts et les utilisateurs qui veulent une session élevée dès le départ ; rejetée pour cette raison.
+
+| Lancement | UAC au démarrage | Élévation depuis l'interface | Usage |
+|---|---|---|---|
+| `ramscope.exe` | non | oui | parcours normal : inventaire, puis « Passer en administrateur » |
+| `ramscope.exe --admin` | oui, sauf si déjà élevé | déjà élevé | utilisateur qui veut appliquer tout de suite |
+| `ramscope.exe --no-admin` | non | non | lecture stricte, audit, aucune relance élevée |
+| `ramscope.exe --demo` | non | non | démonstration |
+| `--elevated` | interne | déjà élevé | relance de l'instance élevée, ne jamais l'exposer comme option utilisateur |
+
+**Constat avant D9-2a.**
+- `main.rs` élevait automatiquement dès le lancement si `--demo`, `--no-admin` et `--elevated` étaient absents et que le processus n'était pas déjà administrateur.
+- `--no-admin` empêchait seulement l'élévation initiale : l'interface affichait encore « Passer en administrateur » et `/api/elevate` pouvait relancer une instance élevée.
+- Une fois élevée, l'instance reste administrateur jusqu'à sa fermeture ; C2 ne change pas cette durée.
+- `--elevated` et `--no-admin` sont retirés des arguments de la relance, puis `--elevated` est ajouté.
+
+**Changements implémentés.**
+1. **Mode d'élévation explicite et testable.** Extraire le calcul dans une fonction pure (par exemple `elevation_mode(args, deja_admin, demo)`) qui distingue : `ReadOnly`, `AdminAtStart`, `StrictReadOnly`, `Demo`, `AlreadyElevated`. Refuser la combinaison `--admin --no-admin` avec un message clair ; `--demo` reste sans UAC.
+2. **Défaut en lecture seule.** Ne plus appeler `win::elevate()` dans le chemin par défaut. Seul `--admin` demande l'UAC au lancement. Si l'UAC est refusé, continuer en lecture seule et laisser l'interface expliquer l'état ; ne pas boucler.
+3. **Mode strict.** `--no-admin` interdit `/api/elevate` (réponse `403` explicite), masque le bouton d'élévation et reste en lecture seule même après une tentative d'appel direct. Le mode est une propriété du serveur, pas du client.
+4. **Propagation au serveur et à l'interface.** Ajouter un booléen `can_elevate` à la configuration du serveur et à `meta` (ou à `/api/health`), puis l'utiliser dans `app.js` pour masquer le bouton et afficher un message adapté. `/api/apply` et `/api/restore` conservent leurs garde-fous actuels.
+5. **Arguments de relance.** `elevated_args` retire `--admin` et `--no-admin`, conserve le port, l'hôte, `--no-browser`, `--demo`, et n'ajoute qu'un seul `--elevated`.
+6. **Documentation.** Mettre à jour `--help`, `README.md` et `SAFETY.md` après implémentation : le lancement normal ne demande plus UAC, `--no-admin` est strict, et la session élevée reste longue jusqu'à D9-2b.
+
+**Tests ajoutés.**
+- `le_defaut_ne_demande_pas_uac` : lancement sans option → `ReadOnly`.
+- `admin_demande_l_uac_une_seule_fois` : mode `AdminAtStart`, pas de boucle.
+- `no_admin_est_strict` : mode `StrictReadOnly`, `can_elevate=false`, `/api/elevate` → `403`.
+- `admin_et_no_admin_sont_rejetes` : erreur de démarrage explicite.
+- `elevated_args_retire_admin_et_no_admin` : port/hôte/`--no-browser` conservés, `--elevated` unique.
+- `le_serveur_strict_ne_propose_pas_elevate` : contrôle serveur/JS, pas seulement le texte du README.
+- `le_snapshot_annonce_le_droit_d_elevation` : propagation de `can_elevate` au snapshot.
+- `une_relance_elevee_reessaie_le_port_avant_de_changer` : le retry de port est limité à `--elevated`, et seulement tant que le quota de tentatives n'est pas épuisé.
+- Test dans une VM avec un **compte standard** : défaut sans UAC ; clic « Passer en administrateur » → UAC ; annulation → l'ancien serveur lecture seule reste vivant ; acceptation → une seule instance élevée ; `--admin` → UAC au démarrage ; `--no-admin` → aucune proposition d'élévation. **Exécuté le 2026-11-15 dans un Windows Sandbox de test : les scénarios `--admin` d'acceptation et d'annulation, `POST /api/elevate` avec `admin:false` → UAC acceptée → `admin:true` sur le même port, le clic DOM et le rechargement avec Chrome for Testing portable sont validés ; `--no-admin` sur VM standard reste à rejouer.**
+
+**Résultats du test standard (2026-11-15).** Le Sandbox est livré avec UAC désactivé ; `EnableLUA=1` a été appliqué puis le Sandbox a été redémarré. Un compte `RamScopeStd` (Utilisateurs) et un compte administrateur distinct ont été créés. Les deux scénarios ont produit une vraie fenêtre `consent.exe` (`Credential Dialog Xaml Host`) avec les boutons Oui/Non :
+
+| Scénario | Action UAC | Résultat RamScope |
+|---|---|---|
+| Acceptation, `--admin --no-browser --port 8899` | clic Oui | instance élevée : `admin:true`, `can_elevate:false`, `ok:true` ; processus standard sorti ; `/api/quit` 200 |
+| Annulation, `--admin --no-browser --port 8898` | clic Non | instance standard toujours vivante : `admin:false`, `can_elevate:true`, `ok:true` ; `/api/quit` 200 |
+| Route du bouton, `POST /api/elevate` sur défaut 8898 | clic Oui | avant `admin:false`, `can_elevate:true` ; après `admin:true`, `can_elevate:false` sur 8898 ; `original_exited:true` ; `/api/quit` 200 |
+| Clic DOM, Chrome for Testing, défaut 8898 | clic Oui | `button_text=Passer en administrateur`, `click_method=cdp_dom` ; après `admin:true`, `can_elevate:false`, `original_exited:true` ; rechargement : badge `Administrateur`, bouton absent ; `/api/quit` 200 |
+
+Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permettre l'automatisation du clic ; le chemin applicatif reste `ShellExecuteW("runas")` puis la relance `--elevated`. Les deux premiers scénarios utilisent `--admin` ; le bouton « Passer en administrateur » a été cliqué dans Chrome for Testing portable, et la page rechargée affiche `Administrateur` sans bouton d'élévation. Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722) ; le test DOM utilise donc Chromium, pas Edge. Les preuves sont conservées dans `sandbox-test/d92/accept-evidence/`, `sandbox-test/d92/cancel-result.txt`, `sandbox-test/d92/endpoint-evidence/` et `sandbox-test/d92/button-evidence/`. Le Sandbox C6 est resté ouvert ; le Sandbox de test d92 a été fermé après relevé.
+
+**Défaut de port corrigé.** Avant correction, `/api/elevate` répondait `ok:true` et lançait bien `--elevated`, mais l'instance élevée se rabattait sur 8899 parce que l'ancien serveur occupait encore 8898 ; le relevé après acceptation échouait. `main.rs` réessaie désormais le port demandé pendant 5 s pour `--elevated`. Après rebuild, le test d'endpoint a observé `admin:true`, `can_elevate:false`, `original_exited:true` et `/api/quit` 200 sur 8898.
+
+**Réversion.** `le_defaut_ne_demande_pas_uac` échoue si le code réintroduit l'élévation automatique ; `no_admin_est_strict` échoue si `/api/elevate` reste accessible.
+
+**Critère de sortie.**
+- [x] Aucun UAC n'est demandé sans action explicite ou `--admin` (tests unitaires).
+- [x] `--no-admin` est réellement strict et testé côté serveur (403 et `can_elevate=false`).
+- [x] Les options, la relance et les parcours C2 restent inchangés.
+- [x] Les scénarios `--admin` d'acceptation et d'annulation sur compte standard sont consignés ; C6, compte administrateur, ne peut pas valider le consentement UAC.
+- [x] La route `POST /api/elevate` du bouton est testée sur compte standard, y compris le retour sur le même port après acceptation ; le défaut de port est corrigé.
+- [x] Le clic DOM et le rechargement après acceptation sont validés avec Chrome for Testing portable ; Edge n'a pas pu être installé dans le Sandbox.
+- [ ] `--no-admin` sur VM standard reste à rejouer.
+
+**Effort indicatif :** 0,5 à 0,75 jour, plus le test VM. Aucun changement de dépendance.
+
+**Risques et parades.**
+- **Confusion utilisateur** : l'interface doit expliquer la lecture seule et proposer un bouton nommé, pas seulement refuser l'action.
+- **UAC annulé** : conserver l'instance lecture seule ; ne pas laisser de processus élevé orphelin.
+- **Fausse promesse de sécurité** : cette étape réduit la durée d'exposition avant l'UAC, pas la surface d'une instance déjà élevée. D9-2b (helper one-shot) reste séparé et ne doit pas être revendiqué avant tests.
+- **D9-1 inchangé** : un processus local hostile du même compte reste hors modèle de menace.
+
+**Hors périmètre de ce lot.** Le helper élevé par lot, le named pipe/DACL, la suppression de l'UAC et toute revendication de protection contre un malware local.
+
 ## 6. Ordre de livraison recommandé
 
 1. **9.1** : chemins système et données (C7), indépendant et testable rapidement.
@@ -376,6 +457,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 8. **9.8** : robustesse et finitions (C9–C13).
 9. **9.9** : tests comportementaux (C8).
 10. **9.10** : décision de licence (C15).
+11. **9.11** : réduction de l'élévation UAC (D9-2a), implémentée ; les parcours `--admin`, `POST /api/elevate`, le clic DOM et le rechargement sur compte standard sont testés.
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
@@ -386,7 +468,7 @@ C1 est un critère de sortie avant distribution, mais pas une raison de retarder
 | Domaine | Test attendu |
 |---|---|
 | Chemins | `SystemRoot` forgé, `LOCALAPPDATA` forgé, `schtasks`/`explorer` absolus |
-| Élévation | arguments conservés, `--elevated` unique, port/hôte effectifs |
+| Élévation | arguments conservés, `--elevated` unique, port/hôte effectifs, défaut sans UAC, `--no-admin` strict |
 | API | `Host` invalide, jeton absent/invalide, origine absente/invalide |
 | État | `from` nul refusé, `from` divergent refusé, restauration interne autorisée |
 | Corps | `Content-Length` énorme, corps chunked énorme |
@@ -401,16 +483,18 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 8. Critères de sortie du lot 9
 
-- [x] Les 43 tests historiques passent toujours ; les 57 tests actuels passent.
+- [x] Les 43 tests historiques passent toujours ; les 67 tests actuels passent.
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
-- [x] La CI est verte sur `c2922b6` : run Windows `43661504033`, toutes les étapes au vert.
+- [x] La CI est verte sur `c9771fc` : run Windows `43663058587`, toutes les étapes au vert.
 - [ ] C1 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
 - [ ] C3–C6 et C14 sont corrigés ou explicitement acceptés dans `SAFETY.md`.
 - [ ] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
+- [x] D9-2a est implémenté et couvert par les tests unitaires ; `--no-admin` est strict côté serveur, le défaut est en lecture seule et la relance ne boucle pas.
+- [x] D9-2a est testé avec un compte standard (consentement, annulation, route `POST /api/elevate`, clic DOM et rechargement) ; Edge n'a pas pu être installé dans le Sandbox, le clic DOM a été validé sous Chrome for Testing. Le helper one-shot reste hors périmètre.
 - [ ] La documentation ne promet plus de verrou, d'authentification ou de garantie non testée.
 - [x] Des actions réelles ont été testées dans un Windows Sandbox jetable : `dmwappushservice` Manuel → Désactivé → Manuel, `StartupAppTask` Ready → Disabled → Ready, et une entrée de démarrage `StartupApproved` 3 → 2, avec les API natives `Win32_Service`, `Get-ScheduledTask` et le registre vérifiés avant, après application et après restauration.
 - [x] Le dépôt distant est à jour après accord de Ro, y compris le compte rendu du test de démarrage.
@@ -440,6 +524,13 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 11. Prochaine action
 
-Commencer par **9.1 et 9.2**, qui sont bornés, testables sans machine jetable et corrigent deux risques concrets. Ensuite, trancher D9-1 avant d'ouvrir 9.3. Ne pas lancer la refonte du canal local sans mesure du besoin.
+C7, C6, C2 et D9-2a sont traités. D9-2a est fermé avec les preuves UAC, route et DOM ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+
+Ordre recommandé pour la suite :
+1. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
+2. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
+3. **C9–C13** : robustesse et finitions, avec tests ciblés.
+4. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
+5. **Validation Edge spécifique** : à faire sur une image ou une VM où Edge est déjà installé ; ce n'est pas un bloqueur du mode par défaut validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.

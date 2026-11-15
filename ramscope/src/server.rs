@@ -25,6 +25,9 @@ pub struct App {
     pub token: String,
     pub cache: Mutex<Option<(Instant, Snapshot)>>,
     pub stop: AtomicBool,
+    /// Droit de demander une élévation depuis l'interface. Fixé au démarrage
+    /// par le mode CLI ; `--no-admin` et `--demo` le désactivent.
+    pub can_elevate: bool,
     /// Hôtes exacts que cette session accepte (`127.0.0.1:<port>`,
     /// `localhost:<port>`). Tout autre `Host` est refusé, pages comprises.
     pub allowed_hosts: Vec<String>,
@@ -39,7 +42,10 @@ impl App {
                 }
             }
         }
-        let s = self.backend.snapshot();
+        let mut s = self.backend.snapshot();
+        // Le backend ne connaît pas la politique CLI ; le serveur est la
+        // seule source de vérité pour le droit d'élever cette session.
+        s.meta.can_elevate = self.can_elevate;
         *self.cache.lock().unwrap() = Some((Instant::now(), s.clone()));
         s
     }
@@ -123,6 +129,16 @@ fn is_loopback(host: &str) -> bool {
     host == "127.0.0.1" || host.eq_ignore_ascii_case("localhost")
 }
 
+/// Politique serveur de l'élévation. Séparée de la route pour être testée
+/// sans fabriquer une requête HTTP.
+fn elevation_allowed(can_elevate: bool) -> Result<(), &'static str> {
+    if can_elevate {
+        Ok(())
+    } else {
+        Err("élévation désactivée pour cette session")
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct ApplyReq {
     #[serde(default)]
@@ -182,7 +198,12 @@ fn handle(app: &App, mut req: Request) {
                 return json(
                     req,
                     200,
-                    &serde_json::json!({ "ok": true, "demo": app.backend.is_demo(), "admin": app.backend.is_admin() }),
+                    &serde_json::json!({
+                        "ok": true,
+                        "demo": app.backend.is_demo(),
+                        "admin": app.backend.is_admin(),
+                        "can_elevate": app.can_elevate,
+                    }),
                 )
             }
             _ => return err(req, 404, "introuvable"),
@@ -343,6 +364,9 @@ fn handle(app: &App, mut req: Request) {
             )
         }
         "/api/elevate" => {
+            if let Err(msg) = elevation_allowed(app.can_elevate) {
+                return err(req, 403, msg);
+            }
             if app.backend.elevate() {
                 app.stop.store(true, Ordering::SeqCst);
                 json(req, 200, &serde_json::json!({"ok": true}))
@@ -415,7 +439,13 @@ fn favicon() -> String {
     r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0e1420"/><rect x="12" y="20" width="8" height="26" rx="2" fill="#4ade80"/><rect x="24" y="14" width="8" height="32" rx="2" fill="#38bdf8"/><rect x="36" y="26" width="8" height="20" rx="2" fill="#fbbf24"/><rect x="48" y="32" width="4" height="14" rx="2" fill="#f87171"/></svg>"##.into()
 }
 
-pub fn serve(host: &str, port: u16, demo: bool, open_browser: bool) -> std::io::Result<()> {
+pub fn serve(
+    host: &str,
+    port: u16,
+    demo: bool,
+    can_elevate: bool,
+    open_browser: bool,
+) -> std::io::Result<()> {
     if !is_loopback(host) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -449,12 +479,15 @@ pub fn serve(host: &str, port: u16, demo: bool, open_browser: bool) -> std::io::
         token,
         cache: Mutex::new(None),
         stop: AtomicBool::new(false),
+        can_elevate,
         allowed_hosts,
     });
 
     println!("RamScope {} — {url}", env!("CARGO_PKG_VERSION"));
     if app.backend.is_demo() {
         println!("Mode DÉMONSTRATION (données simulées, aucun effet sur la machine).");
+    } else if !app.backend.is_admin() && !app.can_elevate {
+        println!("Mode lecture seule strict : élévation désactivée pour cette session.");
     }
     println!("Ctrl+C ou bouton « Quitter » pour arrêter.");
 
@@ -657,9 +690,35 @@ mod tests {
     }
 
     #[test]
+    fn le_serveur_strict_ne_propose_pas_elevate() {
+        assert!(elevation_allowed(true).is_ok());
+        assert_eq!(
+            elevation_allowed(false),
+            Err("élévation désactivée pour cette session")
+        );
+        let js = include_str!("web/app.js");
+        assert!(js.contains("m.can_elevate"));
+        assert!(js.contains("api('/api/elevate'"));
+    }
+
+    #[test]
+    fn le_snapshot_annonce_le_droit_d_elevation() {
+        let app = |can_elevate| App {
+            backend: Backend::new(true),
+            token: "test".into(),
+            cache: Mutex::new(None),
+            stop: AtomicBool::new(false),
+            can_elevate,
+            allowed_hosts: hotes(),
+        };
+        assert!(app(true).snapshot(true).meta.can_elevate);
+        assert!(!app(false).snapshot(true).meta.can_elevate);
+    }
+
+    #[test]
     fn refuse_une_adresse_non_locale_au_demarrage() {
         // Le contrôle a lieu avant toute écoute : rien n'est ouvert.
-        let e = serve("0.0.0.0", 0, true, false).unwrap_err();
+        let e = serve("0.0.0.0", 0, true, false, false).unwrap_err();
         assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

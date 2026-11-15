@@ -382,6 +382,10 @@ pub struct Meta {
     pub os: String,
     pub uptime_secs: u64,
     pub is_admin: bool,
+    /// Vrai si cette session autorise une demande d'élévation depuis
+    /// l'interface. Faux en mode `--no-admin`, en démonstration et dans une
+    /// instance déjà élevée.
+    pub can_elevate: bool,
     pub demo: bool,
     pub collected_at: String,
     pub duration_ms: u64,

@@ -938,6 +938,7 @@ impl DemoState {
                 os: "Windows 11 (build 26100)".into(),
                 uptime_secs: 3 * 86400 + 7 * 3600 + 42 * 60,
                 is_admin: true,
+                can_elevate: false,
                 demo: true,
                 collected_at: crate::util::now_string(),
                 duration_ms: 42,
