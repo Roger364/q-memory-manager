@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 const INDEX: &str = include_str!("web/index.html");
+const COREJS: &str = include_str!("web/core.js");
 const APPJS: &str = include_str!("web/app.js");
 const CSS: &str = include_str!("web/style.css");
 
@@ -219,6 +220,14 @@ fn handle(app: &App, mut req: Request) {
             "/" | "/index.html" => {
                 let html = INDEX.replace("__TOKEN__", &app.token);
                 return send(req, 200, "text/html; charset=utf-8", html);
+            }
+            "/core.js" => {
+                return send(
+                    req,
+                    200,
+                    "application/javascript; charset=utf-8",
+                    COREJS.into(),
+                )
             }
             "/app.js" => {
                 return send(
@@ -743,6 +752,14 @@ mod tests {
             }
         });
 
+        let core = requete_http(
+            port,
+            format!("GET /core.js HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        );
+        assert!(core.contains(" 200 "), "module core non servi : {core}");
+        assert!(core.contains("RamScopeCore"));
+
         let entete = |chemin: &str, origine: bool, longueur: usize, chunked: bool| {
             let mut h = format!(
                 "POST {chemin} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
@@ -848,35 +865,16 @@ mod tests {
     }
 
     #[test]
-    fn un_zero_mesure_reste_mesure_dans_le_rendu_js() {
-        let js = include_str!("web/app.js");
+    fn les_decisions_de_l_interface_sont_testees_par_node() {
+        let statut = std::process::Command::new("node")
+            .args(["--test", "src/web/core.test.mjs"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .status()
+            .expect("Node.js est requis pour les tests des décisions de l'interface");
         assert!(
-            js.contains("function gainKnown(g) { return !!g && g.nature !== 'unavailable'; }"),
-            "le rendu JS doit distinguer une nature absente d’un zéro mesuré"
+            statut.success(),
+            "les tests Node des décisions pures ont échoué : {statut}"
         );
-        assert!(
-            js.contains("return gainKnown(g) ? `${fmt(gainBytes(g))} ${gainNatureBadge(g)}` : 'non chiffrable';"),
-            "gainText ne doit plus décider à partir de bytes == 0"
-        );
-        assert!(
-            js.contains("if (!gainKnown(g)) return 'non chiffrable';"),
-            "gainLine ne doit plus décider à partir de bytes == 0"
-        );
-    }
-
-    #[test]
-    fn l_interface_ne_convertit_pas_le_gain_differe_en_immediat() {
-        let js = include_str!("web/app.js");
-        assert!(
-            !js.contains("now += e.boot"),
-            "conversion différé → immédiat réintroduite"
-        );
-        assert!(
-            !js.contains("if (stopNow) boot = 0"),
-            "remise à zéro du différé réintroduite"
-        );
-        assert!(js.contains("Tout de suite :"));
-        assert!(js.contains("Au prochain démarrage :"));
     }
 
     #[test]
@@ -893,47 +891,12 @@ mod tests {
                 "formulation bannie dans index.html : {interdit}"
             );
         }
-        assert!(js.contains("sélectionner les éléments réversibles à gain différé"));
-        assert!(js.contains("irréversible"));
-        assert!(js.contains("source détectée"));
-        assert!(js.contains("effet tout de suite"));
-        assert!(js.contains("effet au prochain démarrage"));
-        assert!(js.contains("réversibilité"));
-        assert!(js.contains("justification"));
-        assert!(js.contains("provenance de la règle"));
         assert!(!js.contains("Irrréversible"), "faute visible dans app.js");
         assert!(
             js.contains("&quot;"),
             "échappement du guillemet double absent"
         );
         assert!(js.contains("&#39;"), "échappement de l'apostrophe absent");
-    }
-
-    #[test]
-    fn une_terminaison_ne_peut_pas_etre_selectionnee_dans_un_lot() {
-        let js = include_str!("web/app.js");
-        assert!(js.contains("function batchable"));
-        assert!(js.contains("item.advice.action.kind !== 'kill'"));
-        assert!(js.contains("ne peut pas être appliquée dans un lot"));
-    }
-
-    #[test]
-    fn le_fond_de_modale_ne_se_ferme_pas_sur_un_clic_herite() {
-        let js = include_str!("web/app.js");
-        assert!(
-            js.contains("addEventListener('pointerdown'"),
-            "le fond doit mémoriser le début de l’appui"
-        );
-        assert!(
-            js.contains("if (maskPressed && e.target === $('#mask')) closeModal();"),
-            "un clic hérité du bouton d’ouverture ne doit pas fermer la modale"
-        );
-        assert!(
-            !js.contains(
-                "$('#mask').onclick = e => { if (e.target === $('#mask')) closeModal(); };"
-            ),
-            "ancienne fermeture sur clic retargeté réintroduite"
-        );
     }
 
     #[test]

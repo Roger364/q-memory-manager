@@ -1,6 +1,11 @@
 /* RamScope — interface (vanilla JS, aucune dépendance externe) */
 'use strict';
 
+const {
+  emptyGain, gainBytes, gainNature, gainKnown, addGain, aggregateGains,
+  selectable, batchable, modalShouldClose,
+} = RamScopeCore;
+
 const TOKEN = document.querySelector('meta[name="ramscope-token"]')?.content || '';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -77,12 +82,6 @@ function keyOf(kind, item) {
   if (kind === 'tasks') return 't:' + item.path;
   return 'k:' + item.pid;
 }
-function selectable(item) {
-  return item.advice && item.advice.action && !item.advice.locked;
-}
-function batchable(item) {
-  return selectable(item) && item.advice.action.kind !== 'kill';
-}
 function entryFor(kind, item) {
   const a = item.advice.action;
   let label, sub;
@@ -101,10 +100,6 @@ function entryFor(kind, item) {
 function startLabel(s) {
   return { auto: 'Automatique', delayed: 'Auto (différé)', manual: 'Manuel', disabled: 'Désactivé' }[s] || s;
 }
-function emptyGain() { return { bytes: 0, nature: 'unavailable', scope: 'private', additive: false }; }
-function gainBytes(g) { return g && g.bytes ? g.bytes : 0; }
-function gainNature(g) { return g && g.nature === 'measured' ? 'mesuré' : g && g.nature === 'estimated' ? 'estimé' : 'non chiffrable'; }
-function gainKnown(g) { return !!g && g.nature !== 'unavailable'; }
 function gainNatureBadge(g) {
   const n = gainNature(g);
   const cls = n === 'mesuré' ? 'measured' : n === 'estimé' ? 'estimated' : 'unavailable';
@@ -116,42 +111,11 @@ function gainLine(g) {
   const part = g.scope === 'host_part' ? ' <span class="sub">part d’hôte</span>' : '';
   return `${fmt(gainBytes(g))} ${gainNatureBadge(g)}${part}`;
 }
-function addGain(total, g) {
-  if (!gainKnown(g) || (g.nature === 'estimated' && !gainBytes(g))) return;
-  if (total.nature === 'unavailable') {
-    total.bytes = gainBytes(g); total.nature = g.nature; total.scope = g.scope;
-    return;
-  }
-  total.bytes += gainBytes(g);
-  total.nature = total.nature === 'measured' && g.nature === 'measured' ? 'measured' : 'estimated';
-}
 function provenanceText(a) {
   const source = a && a.source ? String(a.source).trim() : '';
   const reviewed = a && a.reviewed ? String(a.reviewed).trim() : '';
   if (!source && !reviewed) return '';
   return source + (reviewed ? (source ? ' · revue : ' : 'revue : ') + reviewed : '');
-}
-function aggregateGains(entries) {
-  const now = emptyGain(), boot = emptyGain();
-  const hosts = new Map();
-  entries.forEach(e => {
-    if (e.kind === 'services' && e.host && e.hostShared > 1) {
-      let h = hosts.get(e.host);
-      if (!h) { h = { names: new Set(), expected: e.hostShared, ram: e.hostRam }; hosts.set(e.host, h); }
-      h.names.add(e.name);
-      h.expected = Math.max(h.expected, e.hostShared);
-      h.ram = Math.max(h.ram, e.hostRam);
-    } else {
-      addGain(now, e.gain);
-      addGain(boot, e.boot);
-    }
-  });
-  hosts.forEach(h => {
-    if (h.expected > 1 && h.names.size >= h.expected && h.ram > 0) {
-      addGain(boot, { bytes: h.ram, nature: 'estimated', scope: 'host', additive: false });
-    }
-  });
-  return { now, boot };
 }
 function toggle(kind, item) {
   if (!batchable(item)) return;
@@ -848,7 +812,7 @@ function closeModal() {
 let maskPressed = false;
 $('#mask').addEventListener('pointerdown', e => { maskPressed = e.target === $('#mask'); });
 $('#mask').addEventListener('click', e => {
-  if (maskPressed && e.target === $('#mask')) closeModal();
+  if (modalShouldClose(maskPressed, e.target === $('#mask'))) closeModal();
   maskPressed = false;
 });
 document.addEventListener('keydown', e => {
