@@ -573,14 +573,14 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
-C1 est un critère de sortie avant distribution, mais pas une raison de retarder C7/C2. La distribution publique reste bloquée tant que C1, C2 et C7 ne sont pas traités, et que C15 n'est pas décidé.
+C1 est un critère de sortie avant distribution. C2 et C7 sont désormais clos ; la distribution publique reste bloquée tant que C1 et C15 ne sont pas traités.
 
 ## 7. Matrice de tests à ajouter
 
 | Domaine | Test attendu |
 |---|---|
 | Chemins | `SystemRoot` forgé, `LOCALAPPDATA` forgé, `schtasks`/`explorer` absolus |
-| Élévation | arguments conservés, `--elevated` unique, port/hôte effectifs, défaut sans UAC, `--no-admin` strict |
+| Élévation | arguments conservés, `--elevated` unique, port/hôte effectifs, défaut sans UAC, `--no-admin` sans élévation demandée |
 | API | `Host` invalide, jeton absent/invalide, origine absente/invalide |
 | État | `from` nul refusé, `from` divergent refusé, restauration interne autorisée |
 | Corps | `Content-Length` énorme, corps chunked énorme |
@@ -605,9 +605,9 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - [ ] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
-- [x] D9-2a est implémenté et couvert par les tests unitaires ; `--no-admin` est strict côté serveur, le défaut est en lecture seule et la relance ne boucle pas.
+- [x] D9-2a est implémenté et couvert par les tests unitaires ; `--no-admin` est strict côté serveur, le défaut est en lecture seule s'il n'est pas déjà élevé, et la relance ne boucle pas.
 - [x] D9-2a est testé avec un compte standard (consentement, annulation, route `POST /api/elevate`, clic DOM et rechargement) ; Edge n'a pas pu être installé dans le Sandbox, le clic DOM a été validé sous Chrome for Testing. Le helper one-shot reste hors périmètre.
-- [ ] La documentation ne promet plus de verrou, d'authentification ou de garantie non testée.
+- [x] La documentation de D9-2a ne promet plus de lecture seule absolue ni de session rétrogradée ; la revue des autres lots reste ouverte.
 - [x] Des actions réelles ont été testées dans un Windows Sandbox jetable : `dmwappushservice` Manuel → Désactivé → Manuel, `StartupAppTask` Ready → Disabled → Ready, et une entrée de démarrage `StartupApproved` 3 → 2, avec les API natives `Win32_Service`, `Get-ScheduledTask` et le registre vérifiés avant, après application et après restauration.
 - [x] Le dépôt distant est à jour après accord de Ro, y compris le compte rendu du test de démarrage.
 - [ ] `PLAN.md` contient les commandes, codes retour et artefacts du lot.
@@ -636,7 +636,9 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 11. Prochaine action
 
-C7, C6, C2 et D9-2a sont traités. D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5 et D9-2a sont traités ; la suite compte **75 tests**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). Restent ouverts : C1, C8, C9–C13, C14 et C15. D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+
+D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la session déjà élevée n'est pas rétrogradée par `--no-admin`, et cette limite est désormais explicite dans `README.md`, `SAFETY.md`, `PLAN.md` et l'aide CLI.
 
 La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_strict_ne_propose_pas_de_relance_admin`. L'alias `127.0.0.1` non joignable avec `--host localhost` est désormais documenté comme comportement de liaison : `localhost` suit la résolution locale (souvent `::1`), et l'adresse affichée au démarrage doit être utilisée. Aucun changement de code n'est retenu pour ce point.
 
@@ -647,4 +649,4 @@ Ordre recommandé pour la suite :
 4. **C8/C15** : tests comportementaux restants et décision de licence.
 5. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
-La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.
+La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. C3/C4/C5 sont désormais clos ; le plan est aligné sur ces constats et sur le durcissement livré.
