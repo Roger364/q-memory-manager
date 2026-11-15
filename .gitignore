@@ -12,3 +12,4 @@ ramscope/ramscope-data/
 # Preuves locales des tests Windows Sandbox (archives, exécutables, captures)
 # Conservées sur la machine mais jamais publiées avec le dépôt.
 sandbox-test/
+sandbox-test-*.zip
