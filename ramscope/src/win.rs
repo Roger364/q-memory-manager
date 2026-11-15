@@ -1021,6 +1021,19 @@ fn trigger_label(n: &str) -> &'static str {
     }
 }
 
+fn task_enabled_from_xml(xml: &str) -> Option<bool> {
+    let doc = roxmltree::Document::parse(xml).ok()?;
+    Some(
+        doc.root_element()
+            .children()
+            .find(|c| c.has_tag_name("Settings"))
+            .and_then(|s| s.children().find(|c| c.has_tag_name("Enabled")))
+            .and_then(|c| c.text())
+            .map(|t| !t.trim().eq_ignore_ascii_case("false"))
+            .unwrap_or(true),
+    )
+}
+
 fn task_from_xml(xml: &str, path: &str) -> Option<TaskItem> {
     let doc = roxmltree::Document::parse(xml).ok()?;
     let root = doc.root_element();
@@ -1037,13 +1050,7 @@ fn task_from_xml(xml: &str, path: &str) -> Option<TaskItem> {
         Some(r) => (child_text(r, "Author"), child_text(r, "Description")),
         None => (String::new(), String::new()),
     };
-    let enabled = root
-        .children()
-        .find(|c| c.has_tag_name("Settings"))
-        .and_then(|s| s.children().find(|c| c.has_tag_name("Enabled")))
-        .and_then(|c| c.text())
-        .map(|t| !t.trim().eq_ignore_ascii_case("false"))
-        .unwrap_or(true);
+    let enabled = task_enabled_from_xml(xml).unwrap_or(true);
     let mut triggers = Vec::new();
     if let Some(t) = root.children().find(|c| c.has_tag_name("Triggers")) {
         for c in t.children().filter(|c| c.is_element()) {
@@ -1652,19 +1659,25 @@ fn run_schtasks(path: &str, enable: bool) -> Result<(), String> {
     }
 }
 
+fn task_enabled_from_schtasks(path: &str) -> Option<bool> {
+    let schtasks = system32_path("schtasks.exe").ok()?;
+    let out = std::process::Command::new(schtasks)
+        .args(["/query", "/tn", path, "/xml"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let xml = String::from_utf8_lossy(&out.stdout);
+    task_enabled_from_xml(xml.trim_start_matches('\u{feff}'))
+}
+
 fn current_task_enabled(path: &str) -> Option<bool> {
-    let f = tasks_dir().ok()?.join(path.trim_start_matches('\\'));
-    let xml = std::fs::read_to_string(f).ok()?;
-    let doc = roxmltree::Document::parse(&xml).ok()?;
-    Some(
-        doc.root_element()
-            .children()
-            .find(|c| c.has_tag_name("Settings"))
-            .and_then(|s| s.children().find(|c| c.has_tag_name("Enabled")))
-            .and_then(|c| c.text())
-            .map(|t| !t.trim().eq_ignore_ascii_case("false"))
-            .unwrap_or(true),
-    )
+    tasks_dir()
+        .ok()
+        .and_then(|base| std::fs::read_to_string(base.join(path.trim_start_matches('\\'))).ok())
+        .and_then(|xml| task_enabled_from_xml(&xml))
+        .or_else(|| task_enabled_from_schtasks(path))
 }
 
 fn kill_process(pid: u32, name: &str, image_path: &str, created_at: u64) -> Result<(), String> {
@@ -1963,6 +1976,18 @@ mod tests {
         let params = elevated_params(&[arg.to_string(), "--port".into(), "8917".into()]);
         assert!(params.starts_with(r#""C:\Program Files\RamScope""#));
         assert!(params.ends_with("--elevated"));
+    }
+
+    #[test]
+    fn lit_l_etat_natif_d_une_tache_pour_le_rollback() {
+        let disabled =
+            r#"<Task version="1.2"><Settings><Enabled>false</Enabled></Settings></Task>"#;
+        let enabled = r#"<Task version="1.2"><Settings><Enabled>true</Enabled></Settings></Task>"#;
+        let implicit = r#"<Task version="1.2"><Settings></Settings></Task>"#;
+        assert_eq!(task_enabled_from_xml(disabled), Some(false));
+        assert_eq!(task_enabled_from_xml(enabled), Some(true));
+        assert_eq!(task_enabled_from_xml(implicit), Some(true));
+        assert_eq!(task_enabled_from_xml("pas du XML"), None);
     }
 
     #[test]
