@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14 et 86 après C9–C13 ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14 et C9–C13 sont corrigés ; C8 et C15 restent à traiter. C3/C4/C5 sont corrigés. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14, 86 après C9–C13, puis 83 après C8 (quatre tests de chaînes remplacés par quatre tests Node et un test Rust) ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14, C9–C13 et C8 sont corrigés ; C15 reste à traiter. C3/C4/C5 sont corrigés. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -38,7 +38,7 @@ Je ne reprends pas son ordre tel quel :
 | C5 — verrous non indépendants | Corrigé le 2026-11-15 | 9.5 | Garde moteur services/processus ; limites startup/tâche documentées |
 | C6 — options CLI perdues à l'élévation | Corrigé le 2026-11-14 | 9.2 | Options conservées, test d'arguments |
 | C7 — chemins système via l'environnement | Corrigé le 2026-11-14 | 9.1 | Chemins système absolus |
-| C8 — tests sur le texte source | Confirmé, nouveau | 9.9 | Chantier dédié, distinct de la CI |
+| C8 — tests sur le texte source | Corrigé le 2026-11-15 | 9.9 | Décisions pures testées par Node ; gardes de source limitées |
 | C9 — `extract_exe` et Unicode | Confirmé, déjà connu | 9.8 | Inchangé |
 | C10 — arrêt brutal avec threads actifs | Confirmé, déjà connu | 9.8 | Inchangé |
 | C11 — plage de ports vide | Confirmé, déjà connu | 9.8 | Inchangé |
@@ -324,7 +324,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 **État (2026-11-15).** Le rapport décide d'abord de la nature : un `Gain::measured(0)` affiche « 0 Mo (mesuré) », tandis qu'un `Gain::estimated(0)` reste indisponible et affiche « non chiffrable ». L'interface suit la même règle avec `gainKnown`, et l'agrégation conserve une nature mesurée quand tous les gains additionnés le sont. `Gain::merge` initialise un total vide avec un zéro mesuré sans le confondre avec un gain indisponible.
 
-**Tests.** `un_zero_mesure_reste_mesure_dans_le_rapport`, `un_zero_mesure_survit_au_merge`, `un_zero_estime_reste_indisponible` et `un_zero_mesure_reste_mesure_dans_le_rendu_js`. Ce dernier est un contrôle structurel du code JS ; le rendu n'a pas été rouvert dans un navigateur.
+**Tests.** `un_zero_mesure_reste_mesure_dans_le_rapport`, `un_zero_mesure_survit_au_merge`, `un_zero_estime_reste_indisponible` et, depuis C8, le test Node `un zéro mesuré reste une mesure, un zéro estimé est ignoré`. Ce dernier teste la décision de rendu sans navigateur ; le rendu visuel n'a pas été rouvert.
 
 **Réversion.** Le test `measured(0)` échoue si le rendu redevient basé uniquement sur `bytes == 0`.
 
@@ -365,6 +365,10 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 - Ne pas introduire une infra E2E lourde dans ce lot sans décision explicite.
 
 **Critère de sortie.** Les tests de comportement nommés couvrent les décisions critiques ; les tests de chaînes restants sont justifiés et limités.
+
+**État (2026-11-15).** Les décisions pures de l'interface sont extraites dans `web/core.js` : `selectable`, `batchable`, `gainBytes`, `gainNature`, `gainKnown`, `addGain`, `aggregateGains` et `modalShouldClose`. `app.js` consomme ce module, et `core.test.mjs` exécute quatre tests Node nommés sur les gains, les lots, les hôtes et la modale. Les quatre tests `include_str!` remplacés (`un_zero_mesure...`, `l_interface_ne_convertit...`, `une_terminaison...`, `le_fond_de_modale...`) ont été supprimés. Restent des tests de source justifiés : CSP, jeton, porte d'élévation et formulations bannies ; ils protègent des contraintes de sécurité ou de texte qui ne peuvent pas être exercées sans navigateur. `cargo test` appelle Node : Node.js est requis pour la suite de tests.
+
+**Limite.** Le câblage DOM des événements, le rendu visuel et les parcours de clic ne sont pas couverts par ces tests purs ; ils restent à vérifier dans un navigateur.
 
 ### 9.10 — Industrialisation et licence : C15
 
@@ -579,13 +583,13 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 6. **9.6** : provenance réelle des règles (C1), traité le 2026-11-15.
 7. **9.7** : zéro mesuré (C14), traité le 2026-11-15.
 8. **9.8** : robustesse et finitions (C9–C13), traité le 2026-11-15.
-9. **9.9** : tests comportementaux (C8).
+9. **9.9** : tests comportementaux (C8), traité le 2026-11-15.
 10. **9.10** : décision de licence (C15).
 11. **9.11** : réduction de l'élévation UAC (D9-2a), implémentée ; les parcours `--admin`, `POST /api/elevate`, le clic DOM et le rechargement sur compte standard sont testés.
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
-C1, C14 et C9–C13 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique reste bloquée tant que C15 n'est pas traité.
+C1, C14, C9–C13 et C8 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique reste bloquée tant que C15 n'est pas traité.
 
 ## 7. Matrice de tests à ajouter
 
@@ -607,7 +611,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 8. Critères de sortie du lot 9
 
-- [x] Les 43 tests historiques passent toujours ; les 86 tests actuels passent.
+- [x] Les 43 tests historiques passent toujours ; les 83 tests Rust actuels passent, ainsi que les quatre tests Node.
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
@@ -615,7 +619,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - [x] C7 est corrigé ou explicitement documenté comme hors modèle de menace ; C1 est corrigé.
 - [x] C3–C6 sont corrigés ou explicitement acceptés dans `SAFETY.md` ; C14 est corrigé.
 - [x] C9–C13 sont corrigés.
-- [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
+- [x] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
 - [x] D9-2a est implémenté et couvert par les tests unitaires ; `--no-admin` est strict côté serveur, le défaut est en lecture seule s'il n'est pas déjà élevé, et la relance ne boucle pas.
 - [x] D9-2a est testé avec un compte standard (consentement, annulation, route `POST /api/elevate`, clic DOM et rechargement) ; Edge n'a pas pu être installé dans le Sandbox, le clic DOM a été validé sous Chrome for Testing. Le helper one-shot reste hors périmètre.
@@ -648,7 +652,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 11. Prochaine action
 
-**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5, C1, C14, C9–C13 et D9-2a sont traités ; la suite compte **86 tests**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). Restent ouverts : C8 et C15. D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5, C1, C14, C9–C13, C8 et D9-2a sont traités ; la suite compte **83 tests Rust** et **4 tests Node**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). Reste ouvert : C15. D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
 
 D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la session déjà élevée n'est pas rétrogradée par `--no-admin`, et cette limite est désormais explicite dans `README.md`, `SAFETY.md`, `PLAN.md` et l'aide CLI.
 
@@ -656,7 +660,7 @@ La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_s
 
 Ordre recommandé pour la suite :
 1. **D9-2b — helper elevated one-shot** (conception en **9.12**) : valider les décisions ouvertes, puis implémenter le canal local, l'authentification, la durée de vie et les tests de réversion. Ne pas le mélanger à D9-1 ni à C2.
-2. **C8/C15** : tests comportementaux restants et décision de licence.
+2. **C15** : décision de licence.
 3. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. C3/C4/C5 sont désormais clos ; le plan est aligné sur ces constats et sur le durcissement livré.
