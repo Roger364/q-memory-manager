@@ -45,13 +45,13 @@ L'interface ne présélectionne aucune action risquée : la sélection de masse 
 
 - La mémoire d'un service hébergé dans `svchost.exe` est partagée : RamScope affiche une part, pas une mesure isolée. Ces parts ne s'additionnent pas.
 - La mémoire « compressée » affichée est le working set du processus Memory Compression : approximation.
-- Les gains de configuration sont des estimations ; un arrêt immédiat affiche en plus un delta de mémoire disponible mesuré après coup. Le reste n'est jamais présenté comme mesuré.
+- Les gains de configuration sont des estimations ; un arrêt immédiat affiche en plus un delta de mémoire disponible mesuré après coup. Le reste n'est jamais présenté comme mesuré. Un zéro mesuré est une mesure réelle et reste affiché comme tel ; `Gain::estimated(0)` reste, lui, non chiffrable.
 - Un service hébergé dans un `svchost.exe` partagé ne compte que si **tous** les services de cet hôte sont dans le lot : le gain vaut alors la RAM de l'hôte, une seule fois. Sinon il est « non chiffrable ». Les parts `host_ram / shared` ne sont jamais additionnées.
 
 ## Limites des règles
 
 - Depuis l'étape 4, le verrou et la gravité sont séparés : `Advice.locked` porte le refus, `Level` décrit la gravité. Un service verrouillé mais non vital (par exemple Windows Update) reste « À garder » ou « Système », avec un cadenas ; « Vital » est réservé aux composants dont l'arrêt casse Windows.
-- Les 601 règles portent une provenance de **famille** (table RamScope héritée, avec une référence Microsoft Learn, éditeurs, Gestionnaire des tâches ou Planificateur de tâches), pas une URL vérifiée règle par règle. Aucune règle n'est sans source, mais aucune n'a de date de revue individuelle : la valeur est `non datée`. Une justification peut donc être fausse pour ton usage ; vérifie l'éditeur et le chemin avant d'agir.
+- Les 601 règles portent une provenance de **famille** (table RamScope héritée, avec une référence Microsoft Learn, éditeurs, Gestionnaire des tâches ou Planificateur de tâches), pas une URL vérifiée règle par règle. Aucune règle n'est sans source, mais aucune n'a de date de revue individuelle : la valeur est `non datée`. L'interface et le rapport exposent ces deux champs ; l'audit accepte `non datée` ou une date ISO valide, sans imposer la dette actuelle. Une justification peut donc être fausse pour ton usage ; vérifie l'éditeur et le chemin avant d'agir.
 - Les correspondances sont exactes : nom de service, nom d'exécutable, nom d'entrée ou composant/suffixe de chemin selon la table. Une entrée `php` ne déclenche plus la règle `hp`. Hors table, les anciennes heuristiques de nom (« update », « helper », « telemetry ») ne proposent plus d'action : le conseil reste `Unknown`.
 - La liste des services hébergés par un `svchost.exe` est reprise dans le conseil du processus ; la branche qui la rendait inatteignable a été supprimée.
 - Le total réel est de 601 règles, et non 602 : `eventsystem` et `eventsysevent` désignaient le même service COM+ Event System et ont été fusionnés. Voir `PLAN.md`, journal 7.6.

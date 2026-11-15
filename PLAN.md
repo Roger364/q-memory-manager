@@ -757,3 +757,20 @@ La version du plan est corrigée en **3.2**, le décompte des tests est remis da
 **Tests de réversion.** `le_serveur_refuse_origine_absente_et_corps_geant_avant_mutation` passe par le vrai `handle` et échoue si le contrôle d'origine, le contrôle de `Content-Length` ou la lecture bornée est retiré ; `une_mutation_sans_origine_est_refusee` échoue si `Origin` redevient optionnel ; `un_corps_trop_volumineux_est_refuse_avant_lecture` échoue si la limite disparaît ; `le_moteur_refuse_un_service_protege_sans_plan` et `le_moteur_refuse_de_demarrer_un_service_protege_sans_plan` appellent directement `win::apply`, sans serveur, et échouent si le garde moteur est retiré ; `le_moteur_refuse_un_etat_divergent_sans_plan` appelle `win::apply` avec un `from` volontairement faux et attend le refus de relecture.
 
 **Limites.** Le test chunked utilise `curl` avec `Transfer-Encoding: chunked` ; il n'a pas été rejoué avec un navigateur. Les tests C5 de service protégé s'arrêtent au garde moteur avant tout appel système ; aucun service réel n'a été modifié. La protection des entrées de démarrage et des tâches reste une validation amont plus une relecture d'état, pas une liste indépendante : c'est désormais la formulation documentée.
+
+## 14. C1/C14 — provenance réelle et zéro mesuré (2026-11-15)
+
+**Changement.** `Advice` porte maintenant `source` et `reviewed` (avec valeurs par défaut vides pour les anciens JSON), remplis depuis la règle par les quatre fonctions de conseil. Les conseils de repli sans règle nommée restent sans provenance inventée. Le rapport HTML ajoute une colonne **Provenance** et le panneau de détails affiche le même couple ; l'API le sérialise. L'audit des règles accepte `non datée` ou une date `AAAA-MM-JJ` valide, vérifie le calendrier et produit un message explicite pour une date impossible ; aucune date n'a été ajoutée aux 601 règles.
+
+Pour C14, `gain_text` et le rendu JS testent la nature avant la valeur. Un `Gain::measured(0)` reste `Measured` dans `merge`, s'affiche « 0 Mo (mesuré) » et conserve cette nature dans l'agrégation JS ; `Gain::estimated(0)` reste `Unavailable`.
+
+| Commande / contrôle | Code retour | Observation |
+|---|---:|---|
+| `cargo fmt --check` (depuis `ramscope/`) | 0 | formatage conforme |
+| `cargo test` | 0 | 82 tests, 82 réussis |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
+| `cargo build --release` | 0 | binaire produit |
+
+**Tests de réversion.** `l_audit_accepte_une_regle_datee_et_refuse_une_date_invalide` échoue si l'audit redevient rigide ou accepte une date impossible ; `le_snapshot_expose_la_provenance_des_regles` et `le_rapport_expose_la_provenance_des_regles` échouent si les champs ne sont plus exposés ; `un_zero_mesure_reste_mesure_dans_le_rapport` échoue si `gain_text` décide à partir de `bytes == 0` ; `un_zero_mesure_survit_au_merge` échoue si `merge` ignore un zéro mesuré ; `un_zero_mesure_reste_mesure_dans_le_rendu_js` échoue si `gainText`/`gainLine` reviennent à `gainBytes` comme condition d'affichage.
+
+**Limites.** Le panneau de détails et le rapport n'ont pas été rouverts dans un navigateur pour ce lot ; le test JS est structurel. Aucune règle n'a reçu de date de revue individuelle : la provenance reste une référence de famille honnête, pas une validation règle par règle.
