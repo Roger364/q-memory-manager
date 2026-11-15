@@ -3,6 +3,8 @@ name = "ramscope"
 version = "1.0.0"
 edition = "2021"
 description = "RamScope - analyseur RAM / services / demarrage pour Windows"
+license = "MIT"
+repository = "https://github.com/Roger364/q-memory-manager"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

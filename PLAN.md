@@ -805,3 +805,30 @@ Pour C14, `gain_text` et le rendu JS testent la nature avant la valeur. Un `Gain
 **Tests de réversion.** Les tests Node `un kill et un élément verrouillé ne sont pas batchables`, `un zéro mesuré reste une mesure, un zéro estimé est ignoré`, `le gain différé ne devient jamais immédiat et les hôtes complets comptent une fois` et `un clic hérité ne ferme pas la modale` échouent si les décisions correspondantes régressent. Le test Rust qui les lance échoue aussi si Node est absent ou si la suite Node échoue.
 
 **Limites.** Node.js est requis pour `cargo test` (la CI l'installe déjà). Le câblage DOM, les événements réels et le rendu visuel ne sont pas couverts ; les tests de source restants sont limités aux contraintes de sécurité ou de formulation qui ne peuvent pas être exercées sans navigateur.
+
+## 17. C15 — licence MIT et ouverture du projet (2026-11-15)
+
+**Décision.** RamScope est publié sous **MIT**, avec Bisse Studio comme titulaire du copyright. Le choix soutient l'adoption et la contribution, tout en laissant les autres applications et prestations du studio hors du périmètre de cette licence. La licence ne concède ni le nom « RamScope » ni la marque Bisse Studio.
+
+**Fichiers ajoutés ou modifiés.**
+- `LICENSE` : texte MIT standard.
+- `ramscope/Cargo.toml` : `license = "MIT"` et URL du dépôt.
+- `README.md` : badge, section **Open source**, liens vers les documents de contribution et de sécurité.
+- `THIRD_PARTY_NOTICES.md` : inventaire des 17 crates permissives, versions, licences et sources.
+- `SECURITY.md` : canal privé, périmètre, versions maintenues et réduction du risque.
+- `CONTRIBUTING.md` : DCO, contributions sous MIT, commandes de test et règles de sécurité.
+
+**Propriété et contributions.** Le projet n'utilise pas de CLA pour l'instant. Le DCO couvre les contributions ordinaires ; toute évolution vers une double licence ou un modèle propriétaire devrait être décidée avant d'accepter des contributions qui ne pourraient pas être relicenciées. Les droits moraux et les droits patrimoniaux doivent être vérifiés si du code a été produit dans un cadre professionnel.
+
+**Vérifications.**
+
+| Commande / contrôle | Code retour | Observation |
+|---|---:|---|
+| `cargo metadata --format-version 1 --no-deps` | 0 | `license = MIT`, dépôt renseigné |
+| `cargo fmt --check` (depuis `ramscope/`) | 0 | formatage conforme |
+| `cargo test` | 0 | 83 tests Rust et 4 tests Node, tous réussis |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
+| `git grep` des motifs de secrets connus | 1 | aucune correspondance dans les fichiers suivis |
+| `git diff --check` | 0 | aucune erreur d'espacement |
+
+**Limites.** Aucun push n'a été effectué. Le garde-fou CI « refuse generated or untracked files » reste rouge à cause des fichiers non suivis préexistants `review - hermes*.md` et `sandbox-test/`, qui n'ont pas été modifiés ni ajoutés. Le fichier de notices est un inventaire : pour une distribution binaire, joindre les textes intégraux et notices de copyright des crates, par exemple avec `cargo-about`. La page Open Source de `bissestudio.ch` n'est pas dans ce dépôt et reste à publier. La titularité exacte du nom légal et les obligations de consommation suisses/européennes doivent être validées par un avocat avant une diffusion commerciale.

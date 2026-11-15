@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14, 86 après C9–C13, puis 83 après C8 (quatre tests de chaînes remplacés par quatre tests Node et un test Rust) ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14, C9–C13 et C8 sont corrigés ; C15 reste à traiter. C3/C4/C5 sont corrigés. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14, 86 après C9–C13, puis 83 après C8 (quatre tests de chaînes remplacés par quatre tests Node et un test Rust) ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14, C9–C13, C8 et C15 sont traités ; C3/C4/C5 sont corrigés. La licence MIT est appliquée localement ; le push et la vérification CI restent à faire.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -14,7 +14,7 @@ La revue est crédible et utile. Elle audite `3673120`, cite des lignes précise
 
 - **C1** : `Rule.source` et `Rule.reviewed` sont effectivement du code mort, et l'audit de `rules.rs` impose `reviewed == "non datée"`. Une vraie date de revue ferait donc échouer un test censé garantir la qualité des règles.
 - **C8** : plusieurs tests de `server.rs` vérifient la présence de chaînes dans les sources (`include_str!`) plutôt que le comportement. Ils peuvent casser sur un refactor inoffensif et passer sur une régression qui conserve la chaîne.
-- **C15** : aucun fichier de licence n'est présent. C'est un choix juridique à documenter avant toute distribution publique.
+- **C15** : aucun fichier de licence n'était présent. La décision a été prise le 2026-11-15 : MIT.
 
 Elle précise aussi deux points déjà présents dans le plan : le jeton de session n'authentifie pas un processus local, et le champ `from` fourni par le client peut être absent, ce qui saute la revérification d'état.
 
@@ -24,7 +24,7 @@ Je ne reprends pas son ordre tel quel :
 
 - **C1 est une dette de vérité des données, pas une élévation de privilèges.** Il reste un critère de sortie avant distribution, mais il ne doit pas retarder C7 et C2, qui sont des risques d'exécution élevée et de frontière de confiance.
 - **C2 est un risque local, pas une faille distante.** Le plan doit rendre explicite le modèle de menace et éviter de promettre une authentification que le jeton actuel ne fournit pas.
-- **C15 est une décision, pas un correctif de code.** Le plan ne choisit pas une licence à la place de Ro ; il impose une décision avant distribution.
+- **C15 était une décision, pas un correctif de code.** La décision MIT a été prise par Ro le 2026-11-15 ; elle est appliquée localement.
 - **C8 est un chantier de qualité de tests**, séparé des correctifs de sécurité. Il ne doit pas être noyé dans la CI déjà livrée.
 
 ### 1.3 Verdict par constat
@@ -45,7 +45,7 @@ Je ne reprends pas son ordre tel quel :
 | C12 — faute « Irrréversible » | Confirmé, déjà connu | 9.8 | Inchangé |
 | C13 — apostrophe non échappée | Confirmé, déjà connu | 9.8 | Inchangé |
 | C14 — zéro mesuré confondu avec absence | Corrigé le 2026-11-15 | 9.7 | Affichage piloté par la nature ; zéro mesuré conservé |
-| C15 — licence absente | Confirmé, nouveau | 9.10 | Décision explicite avant distribution |
+| C15 — licence absente | Décidé le 2026-11-15 : MIT | 9.10 | Fichiers de licence et de communauté ajoutés |
 
 Aucun constat n'est rejeté. La revue ne remplace toutefois pas un test d'action réelle : ses constats de sécurité restent des lectures de code avec préconditions explicitées.
 
@@ -88,7 +88,7 @@ Le lot 9 ne doit pas contenir de refonte graphique, de nouvelle base de règles,
 
 ### D9-5 — Licence et distribution
 
-Décider si le dépôt reste privé, devient public, ou est distribué sous forme de binaire. En l'absence de décision, aucune licence permissive ne doit être ajoutée par défaut. C15 reste ouvert jusqu'à cette décision.
+**Décision (2026-11-15) :** RamScope est publié sous MIT. Bisse Studio conserve ses autres applications et prestations hors du périmètre de cette licence. Le dépôt peut devenir public et le binaire être distribué avec les notices tierces ; le push et la CI restent à finaliser.
 
 ### D9-6 — Portée des tests comportementaux
 
@@ -374,18 +374,24 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 **Objectif.** Terminer ce qui est déjà livré et formaliser la décision de licence.
 
+**Décision (2026-11-15).** RamScope est publié sous **MIT**. Bisse Studio conserve ses autres applications et prestations hors du périmètre de cette licence ; la licence ne concède pas la marque. Le choix privilégie l'adoption, la contribution et la visibilité, conformément au positionnement du studio.
+
 **Déjà livré.**
-- CI Windows : formatage, 43 tests, clippy, build release, JS, sommes SHA-256, refus des fichiers non suivis.
+- CI Windows : formatage, 83 tests Rust et 4 tests Node, clippy, build release, JS, sommes SHA-256, refus des fichiers non suivis.
 - Dependabot pour Cargo et GitHub Actions.
-- Remote `Roger364/q-memory-manager` synchronisé ; push fast-forward.
-- Corrections documentaires de `PLAN.md` et du remote.
+- Remote `Roger364/q-memory-manager`.
 
-**Reste à décider.**
-- C15 : choisir entre dépôt privé sans licence permissive, licence open source, ou distribution binaire avec conditions.
-- Ne pas ajouter de `LICENSE` avant la décision de Ro.
-- Une fois la décision prise, ajouter le fichier de licence et la mention correspondante dans le README.
+**Application locale.**
+- `LICENSE` MIT à la racine, copyright Bisse Studio.
+- `license = "MIT"` et `repository` dans `ramscope/Cargo.toml`.
+- Badge et section **Open source** dans `README.md`.
+- `THIRD_PARTY_NOTICES.md` : inventaire des 17 crates permissives et liens vers les textes.
+- `SECURITY.md` : canal privé, périmètre, versions et réduction du risque.
+- `CONTRIBUTING.md` : DCO, licence MIT des contributions, commandes de test et règles de sécurité.
 
-**Critère de sortie.** La décision de licence est consignée ; la CI reste verte ; le dépôt distant est synchronisé.
+**Reste à faire.** Le push n'a pas été effectué. La CI locale ne peut pas être déclarée verte tant que les fichiers non suivis préexistants (`review - hermes*.md`, `sandbox-test/`) ne sont pas traités : le garde-fou « refuse generated or untracked files » les rejette. Ces fichiers n'ont pas été modifiés ni ajoutés.
+
+**Critère de sortie.** La décision de licence est consignée et appliquée ; la CI reste verte après traitement des fichiers non suivis ; le dépôt distant est synchronisé après accord de Ro.
 
 ### 9.11 — Réduction de l'élévation UAC : D9-2a
 
@@ -584,12 +590,12 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 7. **9.7** : zéro mesuré (C14), traité le 2026-11-15.
 8. **9.8** : robustesse et finitions (C9–C13), traité le 2026-11-15.
 9. **9.9** : tests comportementaux (C8), traité le 2026-11-15.
-10. **9.10** : décision de licence (C15).
+10. **9.10** : décision de licence (C15), MIT appliquée le 2026-11-15.
 11. **9.11** : réduction de l'élévation UAC (D9-2a), implémentée ; les parcours `--admin`, `POST /api/elevate`, le clic DOM et le rechargement sur compte standard sont testés.
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
-C1, C14, C9–C13 et C8 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique reste bloquée tant que C15 n'est pas traité.
+C1, C14, C9–C13, C8 et C15 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique est possible sous MIT, sous réserve du push et de la CI.
 
 ## 7. Matrice de tests à ajouter
 
@@ -620,7 +626,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - [x] C3–C6 sont corrigés ou explicitement acceptés dans `SAFETY.md` ; C14 est corrigé.
 - [x] C9–C13 sont corrigés.
 - [x] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
-- [ ] C15 est décidé et consigné.
+- [x] C15 est décidé (MIT) et consigné.
 - [x] D9-2a est implémenté et couvert par les tests unitaires ; `--no-admin` est strict côté serveur, le défaut est en lecture seule s'il n'est pas déjà élevé, et la relance ne boucle pas.
 - [x] D9-2a est testé avec un compte standard (consentement, annulation, route `POST /api/elevate`, clic DOM et rechargement) ; Edge n'a pas pu être installé dans le Sandbox, le clic DOM a été validé sous Chrome for Testing. Le helper one-shot reste hors périmètre.
 - [x] La documentation de D9-2a ne promet plus de lecture seule absolue ni de session rétrogradée ; la revue des autres lots reste ouverte.
@@ -634,7 +640,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - Refonte de l'interface ou changement de framework front.
 - Remplacement complet de HTTP par un canal local dédié, sauf décision explicite après 9.3.
 - Nouvelles règles métier ou nouvelle base de règles.
-- Signature de code, installeur, distribution publique tant que C15 n'est pas traité.
+- Signature de code, installeur et distribution publique : la licence MIT est choisie, mais le push et la CI doivent être finalisés.
 - Télémétrie, collecte distante ou nettoyage automatique.
 
 ## 10. Risques et parades
@@ -647,12 +653,12 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 | Test d'audit qui verrouille la dette de provenance | accepter explicitement `non datée` ou une date ISO, avec un test daté |
 | Tests de texte source qui remplacent de vrais tests | extraire les fonctions pures et limiter `include_str!` aux gardes justifiées |
 | Fausse preuve de sécurité | ne jamais marquer un P1 « corrigé » sans test de réversion et, si possible, PoC local |
-| Licence choisie par défaut sans décision | garder C15 comme décision explicite de Ro |
+| Licence choisie par défaut sans décision | décision MIT consignée le 2026-11-15 ; toute évolution ultérieure reste explicite |
 | Perte de sauvegarde distante | push après accord, vérifier `git ls-remote` |
 
 ## 11. Prochaine action
 
-**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5, C1, C14, C9–C13, C8 et D9-2a sont traités ; la suite compte **83 tests Rust** et **4 tests Node**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). Reste ouvert : C15. D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5, C1, C14, C9–C13, C8, C15 et D9-2a sont traités ; la suite compte **83 tests Rust** et **4 tests Node**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
 
 D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la session déjà élevée n'est pas rétrogradée par `--no-admin`, et cette limite est désormais explicite dans `README.md`, `SAFETY.md`, `PLAN.md` et l'aide CLI.
 
@@ -660,7 +666,7 @@ La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_s
 
 Ordre recommandé pour la suite :
 1. **D9-2b — helper elevated one-shot** (conception en **9.12**) : valider les décisions ouvertes, puis implémenter le canal local, l'authentification, la durée de vie et les tests de réversion. Ne pas le mélanger à D9-1 ni à C2.
-2. **C15** : décision de licence.
+2. **Publication** : traiter les fichiers non suivis, vérifier la CI, puis pousser la décision MIT après accord.
 3. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. C3/C4/C5 sont désormais clos ; le plan est aligné sur ces constats et sur le durcissement livré.
