@@ -234,6 +234,14 @@ fn handle(app: &App, mut req: Request) {
             if let Some(refus) = verdicts.iter().find(|v| !v.allowed) {
                 return err(req, 403, &refus.message);
             }
+            // C2 : l'état fourni par le client n'est jamais cru sur parole.
+            // On collecte l'état courant et on exige que chaque action
+            // utilisateur soit exactement celle proposée par ce snapshot.
+            let snapshot = app.snapshot(true);
+            let observed = crate::plan::validate_observed(&r.actions, &snapshot);
+            if let Some(refus) = observed.iter().find(|v| !v.allowed) {
+                return err(req, 409, &refus.message);
+            }
             let stop_now = r
                 .actions
                 .iter()
@@ -287,6 +295,10 @@ fn handle(app: &App, mut req: Request) {
             )
         }
         "/api/restore" => {
+            // Chemin interne de restauration : les actions inverses stockées
+            // ont volontairement `from: None` / `was_enabled: None`. Elles ne
+            // passent pas par `validate_observed`, qui est réservé aux actions
+            // utilisateur de /api/apply.
             let r: RestoreReq = match serde_json::from_str(&body) {
                 Ok(r) => r,
                 Err(_) => return err(req, 400, "identifiant invalide"),
@@ -410,6 +422,9 @@ pub fn serve(host: &str, port: u16, demo: bool, open_browser: bool) -> std::io::
             format!("adresse non autorisée : {host} (boucle locale uniquement)"),
         ));
     }
+    // Échec explicite plutôt qu'un jeton prévisible : si le CSPRNG n'est pas
+    // disponible, la session ne démarre pas.
+    let token = util::session_token().map_err(std::io::Error::other)?;
     let addr = format!("{host}:{port}");
     let server = Server::http(&addr)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::AddrInUse, format!("{e}")))?;
@@ -431,7 +446,7 @@ pub fn serve(host: &str, port: u16, demo: bool, open_browser: bool) -> std::io::
 
     let app = Arc::new(App {
         backend: Backend::new(demo),
-        token: util::new_id() + &util::new_id(),
+        token,
         cache: Mutex::new(None),
         stop: AtomicBool::new(false),
         allowed_hosts,

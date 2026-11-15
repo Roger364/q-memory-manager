@@ -1756,6 +1756,8 @@ pub fn apply(actions: &[Action]) -> Vec<RollbackEntry> {
             Action::Kill { .. } => None,
         };
 
+        // `from` / `was_enabled` à None désigne une action inverse interne
+        // (restauration). Le chemin /api/apply exige, lui, un état observé.
         let res = match a {
             Action::Service { name, start, from } => {
                 if let Some(attendu) = from {

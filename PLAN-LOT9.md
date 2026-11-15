@@ -63,14 +63,18 @@ Aucun constat n'est rejeté. La revue ne remplace toutefois pas un test d'action
 
 ### D9-1 — Les processus locaux sont-ils dans le modèle de menace ?
 
-- **Si oui** : C2 est une vraie élévation locale de privilèges et doit être traitée structurellement (canal local authentifié, pas seulement un jeton lisible dans une page).
-- **Si non** : documenter explicitement que RamScope fait confiance aux processus de l'utilisateur, et appliquer seulement les mesures de réduction de surface. Cette position doit être écrite dans `SAFETY.md` : elle ne doit pas être implicite.
+**Décision (2026-11-15) : non fiables.** Un processus local du même compte peut lire la page, récupérer le jeton et forger un `Origin` : le jeton HTTP ne l'authentifie pas. RamScope ne doit donc pas prétendre protéger une session élevée contre un programme malveillant déjà exécuté sous ce compte.
 
-Recommandation : considérer les processus locaux comme non fiables tant que RamScope s'élève par défaut.
+Conséquences retenues pour la v1 :
+
+- C2 est appliqué au niveau HTTP : jeton CSPRNG, état observé obligatoire, action limitée à celles proposées par le snapshot courant, restauration interne séparée.
+- Le risque résiduel « processus local hostile » est **documenté et accepté pour la v1**, pas nié. Il ne doit pas être présenté comme un point corrigé.
+- Le named pipe/DACL n'est **pas** un prérequis de la v1 : une DACL ouverte au navigateur du même utilisateur ne bloquerait pas forcément un processus du même compte. Cette refonte, ou un helper élevé avec consentement par lot, fera l'objet d'un lot séparé si le besoin est confirmé.
+- La réduction de la durée de la session administrateur et l'élévation explicite restent recommandées avant une distribution publique (voir D9-2), mais ne sont pas mélangées à C2.
 
 ### D9-2 — Conserver l'élévation UAC par défaut ?
 
-Si oui, C2 et C6 sont prioritaires. Si l'usage recommandé devient `--no-admin`, il faut le dire clairement dans le README et ne plus présenter l'élévation comme le chemin normal.
+Décision encore ouverte. C2 ne change pas le mode d'élévation actuel : il réduit la surface de l'API sans modifier le lancement. Si l'usage recommandé devient `--no-admin`, il faudra le dire clairement dans le README et ne plus présenter l'élévation comme le chemin normal. Avant une distribution publique, étudier une élévation explicite et une session administrateur temporaire ; c'est un lot séparé, pas une condition de C2.
 
 ### D9-3 — API HTTP ou canal local dédié ?
 
@@ -172,34 +176,47 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 
 ### 9.3 — Frontière de confiance de l'API élevée : C2
 
-**Objectif.** Un processus local non élevé ne doit pas pouvoir faire exécuter des actions au serveur élevé sans preuve d'autorisation, et le serveur ne doit pas croire l'état fourni par le client.
+**Objectif.** Le serveur ne doit pas croire l'état fourni par le client et ne doit accepter que les actions réellement proposées par l'analyse courante. Un processus local hostile reste hors du modèle de menace de la v1 : le jeton protège la session navigateur, pas l'identité d'un programme local (D9-1).
 
 **Périmètre.** `server.rs`, `plan.rs`, `win.rs`, `util.rs`, `model.rs`, `SAFETY.md`, `README.md`, tests HTTP et tests unitaires.
 
 **Changements minimaux, dans cet ordre.**
 1. **Jeton** : générer le jeton avec `BCryptGenRandom` (Windows) plutôt qu'avec `new_id()` horloge/PID/xorshift.
-2. **Validation d'état côté serveur** : pour `Service`, `Startup` et `Task`, exiger `from`/`was_enabled` sur toute action ordinaire, puis les comparer au snapshot serveur. Une action sans état observé est refusée, sauf les actions internes de restauration qui ne passent pas par cette route.
-3. **Restauration** : distinguer explicitement le chemin interne de restauration du chemin public `/api/apply` ; ne pas accepter `from: None` comme contournement sur une action utilisateur.
-4. **Documentation du modèle** : indiquer noir sur blanc dans `SAFETY.md` si les processus locaux sont supposés fiables. Si le choix est « non fiables », ajouter :
-   - un contrôle d'intégrité du client ou un canal local authentifié (named pipe avec DACL) ;
-   - une limitation claire de l'API HTTP à la session navigateur ;
-   - un refus des mutations sans `Origin` (voir 9.4).
-5. **Décision structurelle séparée** : si le canal nommé est retenu, créer un lot dédié. Ne pas mélanger cette refonte avec les correctifs ci-dessus.
+2. **Validation d'état côté serveur** : pour `Service`, `Startup` et `Task`, exiger `from`/`was_enabled` sur toute action ordinaire, puis les comparer au snapshot serveur fraîchement collecté. Une action sans état observé est refusée, sauf les actions internes de restauration qui ne passent pas par cette route. Une action doit aussi être exactement celle proposée par le snapshot (`advice.action`), et non une cible arbitraire du même type.
+3. **Restauration** : distinguer explicitement le chemin interne de restauration du chemin public `/api/apply` ; ne pas accepter `from: None` comme contournement sur une action utilisateur. Le démarrage d'un service (`StartService`) est réservé à ce chemin interne.
+4. **Documentation du modèle** : acter D9-1 dans `SAFETY.md` et le README : processus locaux non fiables, jeton limité à la session navigateur, risque résiduel accepté pour la v1. Ne pas annoncer un contrôle d'intégrité du client ni un canal authentifié qui n'existe pas encore.
+5. **Décision structurelle séparée** : le named pipe/DACL ou un helper élevé avec consentement par lot reste un lot dédié. Ne pas mélanger cette refonte avec les correctifs ci-dessus.
 
 **Tests.**
-- `apply` avec `from: null` sur une action utilisateur → refus.
-- `apply` avec `from` différent de l'état serveur → refus.
-- `restore` interne continue de fonctionner sans `from` fourni par le client.
-- Jeton absent, invalide, ou provenant d'un autre port → refus.
-- Test de non-régression : un `Host` autorisé et un jeton valide restent nécessaires.
-- Test de génération : la source CSPRNG et la longueur sont vérifiées ; au minimum, deux jetons successifs ne sont pas prévisibles par l'horloge/PID.
+- `refuse_un_from_null_sur_une_action_utilisateur` : `from: null` → refus.
+- `refuse_un_etat_divergent_du_snapshot` : état différent de l'état serveur → refus.
+- `accepte_les_actions_et_l_etat_du_snapshot` : les trois types d'action proposés passent avec l'état courant.
+- `refuse_une_action_non_proposee_meme_avec_le_bon_etat` : cible réelle mais action hors snapshot → refus.
+- `refuse_le_demarrage_d_un_service_sur_la_route_utilisateur` : `StartService` réservé à la restauration.
+- `accepte_un_arret_immediat_propose_et_refuse_un_arret_arbitraire` : l'arrêt immédiat suit la même règle de proposition.
+- `accepte_une_terminaison_proposee_par_le_snapshot` : la terminaison doit correspondre à l'identité et à l'action proposées.
+- `une_restauration_interne_rejoue_un_undo_sans_etat_observe` : les inverses `from: None` restent applicables par le moteur.
+- `le_jeton_de_session_est_long_hexadecimal_et_imprevisible` : 32 octets CSPRNG, 64 caractères, deux jetons différents.
+- Les tests existants de `Host`, d'origine et de jeton restent verts ; un jeton absent ou invalide est toujours refusé.
 
 **Critère de sortie.**
-- Le scénario « processus local non élevé lit le jeton puis applique une action » est soit bloqué, soit explicitement documenté comme hors modèle de menace.
-- Aucune action de service/startup/tâche ne passe sans état observé côté serveur.
-- `SAFETY.md` ne prétend plus que le jeton authentifie l'appelant.
+- Le scénario « processus local non élevé lit le jeton puis applique une action » est explicitement documenté comme hors modèle de menace de la v1 (D9-1), avec le risque résiduel nommé.
+- Aucune action de service/startup/tâche ne passe sans état observé, et aucune action hors snapshot n'est acceptée par `/api/apply`.
+- `SAFETY.md` et le README ne prétendent plus que le jeton authentifie l'appelant.
 
-**Réversion.** Le test `from: null` échoue si la validation d'état est retirée.
+**Réversion.** `refuse_un_from_null_sur_une_action_utilisateur` et `refuse_une_action_non_proposee_meme_avec_le_bon_etat` échouent si la validation d'état ou la limitation au snapshot est retirée.
+
+**Vérification HTTP en démonstration (2026-11-15).** Le binaire release a été lancé avec `--demo --no-browser --port 0` (port effectif 63242), puis un client Python a lu le jeton dans la page et envoyé les requêtes avec `Host`, `Origin` et `X-RamScope-Token` corrects :
+
+- `from: null` → `409`, « État constaté du service manquant » ;
+- `from` divergent → `409`, « L'état du service a changé depuis l'analyse » ;
+- état courant conservé mais autre `start` → `409`, « Action non proposée par l'analyse courante » ;
+- action exacte du snapshot (service `dmwappushservice`, Manuel → Désactivé) → `200`, point de restauration créé ;
+- restauration interne de ce point (`from: None`) → `200`, service revenu à Manuel.
+
+Les tests unitaires couvrent la fonction pure et le moteur ; ce test HTTP couvre le branchement réel de la route. Depuis ce test, deux tests unitaires supplémentaires couvrent l'arrêt immédiat et la terminaison proposés (56 tests au total).
+
+**Vérification interface (2026-11-15).** L'interface a été ouverte dans Chromium sur le binaire release en mode démonstration. Le service `dmwappushservice` (Manuel → Désactivé) a été sélectionné, confirmé et appliqué : « Application : 1/1 réussi », point de restauration `dfb8a171e56522c1` créé. Le même point a ensuite été restauré depuis l'onglet Restauration : « Restauration : 1/1 réussi », service revenu à Manuel. Le journal navigateur ne contient aucune erreur console et les appels `/api/apply` et `/api/restore` ont répondu `200`. Aucune action n'a été appliquée sur une machine réelle.
 
 ### 9.4 — Origine et taille des requêtes : C3, C4
 
@@ -375,11 +392,12 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 8. Critères de sortie du lot 9
 
-- [x] Les 43 tests historiques passent toujours ; les 47 tests actuels passent.
+- [x] Les 43 tests historiques passent toujours ; les 56 tests actuels passent.
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
-- [ ] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
+- [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
+- [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
 - [ ] La CI est verte et reproductible.
-- [ ] C1, C2 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
+- [ ] C1 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
 - [ ] C3–C6 et C14 sont corrigés ou explicitement acceptés dans `SAFETY.md`.
 - [ ] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.

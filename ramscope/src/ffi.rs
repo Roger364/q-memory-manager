@@ -57,6 +57,7 @@ pub const REG_MULTI_SZ: DWORD = 7;
 pub const REG_OPTION_NON_VOLATILE: DWORD = 0;
 
 pub const TOKEN_QUERY: DWORD = 0x0008;
+pub const BCRYPT_USE_SYSTEM_PREFERRED_RNG: DWORD = 0x0000_0002;
 pub const SW_SHOWNORMAL: i32 = 1;
 pub const SW_SHOW: i32 = 5;
 
@@ -454,6 +455,16 @@ extern "system" {
 #[link(name = "ntdll")]
 extern "system" {
     pub fn RtlGetVersion(lpVersionInformation: *mut OSVERSIONINFOW) -> i32;
+}
+
+#[link(name = "bcrypt")]
+extern "system" {
+    pub fn BCryptGenRandom(
+        hAlgorithm: HANDLE,
+        pbBuffer: *mut u8,
+        cbBuffer: DWORD,
+        dwFlags: DWORD,
+    ) -> i32;
 }
 
 #[link(name = "ole32")]

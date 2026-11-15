@@ -973,6 +973,8 @@ impl DemoState {
             // État recalculé à chaque action : l'ordre compte (ex. restauration
             // « remettre en auto » PUIS « redémarrer le service »).
             let snap = self.snapshot();
+            // `from` / `was_enabled` à None désigne une action inverse interne
+            // (restauration), jamais une action utilisateur de /api/apply.
             let (undo, res) = match a {
                 Action::Service { name, start, from } => {
                     if rules::is_protected_service(name) {
@@ -1187,5 +1189,24 @@ mod tests {
         let action = kill_propose(&state);
         let entries = state.apply(&[action]);
         assert!(entries[0].ok, "message : {}", entries[0].message);
+    }
+
+    #[test]
+    fn une_restauration_interne_rejoue_un_undo_sans_etat_observe() {
+        let mut state = DemoState::default();
+        let action = Action::Service {
+            name: "DiagTrack".into(),
+            start: StartType::Disabled,
+            from: Some(StartType::Auto),
+        };
+        let entries = state.apply(&[action]);
+        assert!(entries[0].ok, "message : {}", entries[0].message);
+        let undo = entries[0]
+            .undo
+            .clone()
+            .expect("une modification de service doit avoir un inverse");
+        assert!(matches!(undo, Action::Service { from: None, .. }));
+        let restored = state.apply(&[undo]);
+        assert!(restored[0].ok, "message : {}", restored[0].message);
     }
 }

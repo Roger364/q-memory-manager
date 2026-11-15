@@ -7,7 +7,7 @@
 //! Contrainte : aucun appel système, aucune dépendance à la couche FFI
 //! Windows ni au module `win`. Le module doit compiler sur toutes les cibles.
 
-use crate::model::{Action, Gain, GainScope};
+use crate::model::{Action, Gain, GainScope, Snapshot, StartType};
 use crate::rules;
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,156 @@ pub fn validate(actions: &[Action], self_pid: u32) -> Vec<Verdict> {
             }
         })
         .collect()
+}
+
+/// Valide une action utilisateur contre le snapshot qui vient d'être collecté.
+///
+/// Cette validation est réservée à `/api/apply`. Le chemin interne de
+/// restauration ne l'appelle pas : ses actions inverses ont volontairement
+/// `from: None` / `was_enabled: None`. Ici, au contraire, l'état observé est
+/// obligatoire et doit correspondre, et l'action doit être exactement celle
+/// que le snapshot propose à l'utilisateur. Cela empêche un client de choisir
+/// un service, une cible ou un état qui n'était pas dans l'analyse courante.
+pub fn validate_observed(actions: &[Action], snapshot: &Snapshot) -> Vec<Verdict> {
+    actions
+        .iter()
+        .map(|action| validate_observed_one(action, snapshot))
+        .collect()
+}
+
+fn validate_observed_one(action: &Action, snapshot: &Snapshot) -> Verdict {
+    match action {
+        Action::Service { name, start, from } => {
+            let Some(service) = snapshot.services.iter().find(|s| s.name == *name) else {
+                return Verdict::refuse("Service absent du snapshot courant : relance l'analyse.");
+            };
+            match from {
+                None => {
+                    return Verdict::refuse(
+                        "État constaté du service manquant : action utilisateur refusée.",
+                    );
+                }
+                Some(attendu) if *attendu != service.start => {
+                    return Verdict::refuse(
+                        "L'état du service a changé depuis l'analyse : relance l'analyse.",
+                    );
+                }
+                Some(_) => {}
+            }
+            if *start == service.start {
+                return Verdict::refuse("Le service est déjà dans l'état demandé.");
+            }
+            if service.advice.action.as_ref() != Some(action) {
+                return Verdict::refuse("Action non proposée par l'analyse courante.");
+            }
+            Verdict::allow()
+        }
+        Action::Startup {
+            id,
+            enabled,
+            was_enabled,
+        } => {
+            let Some(item) = snapshot.startup.iter().find(|s| s.id == *id) else {
+                return Verdict::refuse(
+                    "Entrée de démarrage absente du snapshot courant : relance l'analyse.",
+                );
+            };
+            match was_enabled {
+                None => {
+                    return Verdict::refuse(
+                        "État constaté du démarrage manquant : action utilisateur refusée.",
+                    );
+                }
+                Some(attendu) if *attendu != item.enabled => {
+                    return Verdict::refuse(
+                        "L'état du démarrage a changé depuis l'analyse : relance l'analyse.",
+                    );
+                }
+                Some(_) => {}
+            }
+            if *enabled == item.enabled {
+                return Verdict::refuse("L'entrée de démarrage est déjà dans l'état demandé.");
+            }
+            if item.advice.action.as_ref() != Some(action) {
+                return Verdict::refuse("Action non proposée par l'analyse courante.");
+            }
+            Verdict::allow()
+        }
+        Action::Task {
+            path,
+            enabled,
+            was_enabled,
+        } => {
+            let Some(item) = snapshot.tasks.iter().find(|t| t.path == *path) else {
+                return Verdict::refuse("Tâche absente du snapshot courant : relance l'analyse.");
+            };
+            match was_enabled {
+                None => {
+                    return Verdict::refuse(
+                        "État constaté de la tâche manquant : action utilisateur refusée.",
+                    );
+                }
+                Some(attendu) if *attendu != item.enabled => {
+                    return Verdict::refuse(
+                        "L'état de la tâche a changé depuis l'analyse : relance l'analyse.",
+                    );
+                }
+                Some(_) => {}
+            }
+            if *enabled == item.enabled {
+                return Verdict::refuse("La tâche est déjà dans l'état demandé.");
+            }
+            if item.advice.action.as_ref() != Some(action) {
+                return Verdict::refuse("Action non proposée par l'analyse courante.");
+            }
+            Verdict::allow()
+        }
+        Action::Kill {
+            pid,
+            name,
+            image_path,
+            created_at,
+        } => {
+            let Some(process) = snapshot.processes.iter().find(|p| p.pid == *pid) else {
+                return Verdict::refuse(
+                    "Processus absent du snapshot courant : relance l'analyse.",
+                );
+            };
+            if process.name != *name
+                || !process.path.eq_ignore_ascii_case(image_path)
+                || process.created_at != *created_at
+            {
+                return Verdict::refuse(
+                    "L'identité du processus a changé depuis l'analyse : relance l'analyse.",
+                );
+            }
+            if process.advice.action.as_ref() != Some(action) {
+                return Verdict::refuse("Terminaison non proposée par l'analyse courante.");
+            }
+            Verdict::allow()
+        }
+        Action::StopService { name } => {
+            let Some(service) = snapshot.services.iter().find(|s| s.name == *name) else {
+                return Verdict::refuse("Service absent du snapshot courant : relance l'analyse.");
+            };
+            let propose = service.advice.action.as_ref().is_some_and(|action| {
+                matches!(
+                    action,
+                    Action::Service {
+                        start: StartType::Manual | StartType::Disabled,
+                        ..
+                    }
+                )
+            });
+            if !service.running || !propose {
+                return Verdict::refuse("Arrêt non proposé par l'analyse courante.");
+            }
+            Verdict::allow()
+        }
+        Action::StartService { .. } => Verdict::refuse(
+            "Le démarrage d'un service est réservé au chemin interne de restauration.",
+        ),
+    }
 }
 
 fn validate_one(action: &Action, self_pid: u32) -> Verdict {
@@ -447,5 +597,187 @@ mod tests {
     #[test]
     fn accepte_un_lot_vide() {
         assert!(validate(&[], 1).is_empty());
+    }
+
+    fn snapshot_demo() -> Snapshot {
+        crate::demo::DemoState::default().snapshot()
+    }
+
+    fn action_service_proposee(snapshot: &Snapshot) -> Action {
+        snapshot
+            .services
+            .iter()
+            .find_map(|service| match &service.advice.action {
+                Some(action @ Action::Service { .. }) => Some(action.clone()),
+                _ => None,
+            })
+            .expect("la démo doit proposer au moins un service")
+    }
+
+    #[test]
+    fn refuse_un_from_null_sur_une_action_utilisateur() {
+        let snapshot = snapshot_demo();
+        let mut action = action_service_proposee(&snapshot);
+        if let Action::Service { from, .. } = &mut action {
+            *from = None;
+        }
+        let verdict = validate_observed(&[action], &snapshot);
+        assert!(!verdict[0].allowed);
+        assert!(verdict[0].message.contains("manquant"));
+    }
+
+    #[test]
+    fn refuse_un_etat_divergent_du_snapshot() {
+        let snapshot = snapshot_demo();
+        let mut action = action_service_proposee(&snapshot);
+        let name = match &action {
+            Action::Service { name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        let actuel = snapshot
+            .services
+            .iter()
+            .find(|service| service.name == name)
+            .expect("le service proposé doit exister")
+            .start;
+        if let Action::Service { from, .. } = &mut action {
+            *from = Some(if actuel == StartType::Auto {
+                StartType::Manual
+            } else {
+                StartType::Auto
+            });
+        }
+        let verdict = validate_observed(&[action], &snapshot);
+        assert!(!verdict[0].allowed);
+        assert!(verdict[0].message.contains("changé"));
+    }
+
+    #[test]
+    fn accepte_les_actions_et_l_etat_du_snapshot() {
+        let snapshot = snapshot_demo();
+        let service = action_service_proposee(&snapshot);
+        let startup = snapshot
+            .startup
+            .iter()
+            .find_map(|item| match &item.advice.action {
+                Some(action @ Action::Startup { .. }) => Some(action.clone()),
+                _ => None,
+            })
+            .expect("la démo doit proposer une entrée de démarrage");
+        let task = snapshot
+            .tasks
+            .iter()
+            .find_map(|item| match &item.advice.action {
+                Some(action @ Action::Task { .. }) => Some(action.clone()),
+                _ => None,
+            })
+            .expect("la démo doit proposer une tâche");
+        let verdicts = validate_observed(&[service, startup, task], &snapshot);
+        assert!(verdicts.iter().all(|v| v.allowed), "{verdicts:?}");
+    }
+
+    #[test]
+    fn refuse_une_action_non_proposee_meme_avec_le_bon_etat() {
+        let snapshot = snapshot_demo();
+        let mut action = action_service_proposee(&snapshot);
+        let name = match &action {
+            Action::Service { name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        let actuel = snapshot
+            .services
+            .iter()
+            .find(|service| service.name == name)
+            .expect("le service proposé doit exister")
+            .start;
+        let original = match &action {
+            Action::Service { start, .. } => *start,
+            _ => unreachable!(),
+        };
+        let nouveau = [
+            StartType::Auto,
+            StartType::Delayed,
+            StartType::Manual,
+            StartType::Disabled,
+        ]
+        .into_iter()
+        .find(|candidat| *candidat != actuel && *candidat != original)
+        .expect("un autre état de démarrage doit exister");
+        if let Action::Service { start, .. } = &mut action {
+            *start = nouveau;
+        }
+        let verdict = validate_observed(&[action], &snapshot);
+        assert!(!verdict[0].allowed);
+        assert!(verdict[0].message.contains("proposée"));
+    }
+
+    #[test]
+    fn refuse_le_demarrage_d_un_service_sur_la_route_utilisateur() {
+        let snapshot = snapshot_demo();
+        let verdict = validate_observed(
+            &[Action::StartService {
+                name: "DiagTrack".into(),
+            }],
+            &snapshot,
+        );
+        assert!(!verdict[0].allowed);
+        assert!(verdict[0].message.contains("restauration"));
+    }
+
+    #[test]
+    fn accepte_un_arret_immediat_propose_et_refuse_un_arret_arbitraire() {
+        let snapshot = snapshot_demo();
+        let propose = snapshot
+            .services
+            .iter()
+            .find(|service| {
+                service.running
+                    && service.advice.action.as_ref().is_some_and(|action| {
+                        matches!(
+                            action,
+                            Action::Service {
+                                start: StartType::Manual | StartType::Disabled,
+                                ..
+                            }
+                        )
+                    })
+            })
+            .expect("la démo doit proposer un arrêt immédiat");
+        let allowed = validate_observed(
+            &[Action::StopService {
+                name: propose.name.clone(),
+            }],
+            &snapshot,
+        );
+        assert!(allowed[0].allowed, "{:?}", allowed[0]);
+
+        let arbitraire = snapshot
+            .services
+            .iter()
+            .find(|service| service.running && service.advice.action.is_none())
+            .expect("la démo doit contenir un service sans action proposée");
+        let refused = validate_observed(
+            &[Action::StopService {
+                name: arbitraire.name.clone(),
+            }],
+            &snapshot,
+        );
+        assert!(!refused[0].allowed);
+        assert!(refused[0].message.contains("proposé"));
+    }
+
+    #[test]
+    fn accepte_une_terminaison_proposee_par_le_snapshot() {
+        let snapshot = snapshot_demo();
+        let action = snapshot
+            .processes
+            .iter()
+            .find_map(|process| match &process.advice.action {
+                Some(action @ Action::Kill { .. }) => Some(action.clone()),
+                _ => None,
+            })
+            .expect("la démo doit proposer une terminaison");
+        let verdict = validate_observed(&[action], &snapshot);
+        assert!(verdict[0].allowed, "{:?}", verdict[0]);
     }
 }

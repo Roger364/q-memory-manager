@@ -64,6 +64,55 @@ fn civil(secs: u64) -> (i64, u32, u32, u32, u32, u32) {
     )
 }
 
+/// Jeton de session imprévisible (32 octets, 64 caractères hexadécimaux).
+///
+/// Le jeton n'authentifie pas un processus local : il protège l'API contre
+/// une page ou une origine qui n'a pas reçu la page de cette session. Voir
+/// `SAFETY.md` (décision D9-1).
+#[cfg(windows)]
+pub fn session_token() -> Result<String, String> {
+    use crate::ffi::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
+
+    let mut bytes = [0u8; 32];
+    let status = unsafe {
+        BCryptGenRandom(
+            0,
+            bytes.as_mut_ptr(),
+            bytes.len() as u32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
+    };
+    if status != 0 {
+        return Err(format!(
+            "génération du jeton de session impossible (BCryptGenRandom 0x{status:08X})"
+        ));
+    }
+    Ok(hex_lower(&bytes))
+}
+
+#[cfg(not(windows))]
+pub fn session_token() -> Result<String, String> {
+    use std::io::Read;
+
+    let mut bytes = [0u8; 32];
+    let mut source = std::fs::File::open("/dev/urandom")
+        .map_err(|e| format!("source d'aléa indisponible : {e}"))?;
+    source
+        .read_exact(&mut bytes)
+        .map_err(|e| format!("lecture d'aléa impossible : {e}"))?;
+    Ok(hex_lower(&bytes))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
 pub fn new_id() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -186,4 +235,22 @@ pub fn extract_exe(cmd: &str) -> String {
         }
     };
     raw.rsplit(['\\', '/']).next().unwrap_or("").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn le_jeton_de_session_est_long_hexadecimal_et_imprevisible() {
+        let a = session_token().expect("le CSPRNG doit être disponible pendant les tests");
+        let b = session_token().expect("le CSPRNG doit être disponible pendant les tests");
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(a.chars().all(|c| !c.is_ascii_uppercase()));
+        assert_ne!(
+            a, b,
+            "deux jetons successifs ne doivent pas être identiques"
+        );
+    }
 }

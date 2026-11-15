@@ -56,6 +56,19 @@ L'interface ne présélectionne aucune action risquée : la sélection de masse 
 - La liste des services hébergés par un `svchost.exe` est reprise dans le conseil du processus ; la branche qui la rendait inatteignable a été supprimée.
 - Le total réel est de 601 règles, et non 602 : `eventsystem` et `eventsysevent` désignaient le même service COM+ Event System et ont été fusionnés. Voir `PLAN.md`, journal 7.6.
 
+## Confiance locale (décision D9-1)
+
+Les processus locaux sont considérés comme **non fiables**. Un programme exécuté sous le même compte utilisateur peut lire la page servie sur la boucle locale, récupérer le jeton de session et fabriquer un en-tête `Origin` : le jeton n'authentifie donc pas un processus local. Il protège la session contre une page ou une origine qui n'a pas reçu cette page, pas contre un programme malveillant déjà présent sur la machine.
+
+Conséquences dans cette version :
+
+- `/api/apply` recollecte l'état courant et refuse toute action de service, de démarrage ou de tâche sans état observé (`from` / `was_enabled`), ou dont l'état ne correspond plus au snapshot.
+- L'action doit être exactement celle que le snapshot propose pour cette cible ; une cible réelle mais une action arbitraire est refusée. L'arrêt immédiat n'est accepté que pour un service que l'analyse propose de passer en manuel ou de désactiver.
+- Le démarrage d'un service (`StartService`) est réservé au chemin interne de restauration. Les actions inverses enregistrées avec `from: None` ne passent pas par la validation des actions utilisateur.
+- Le jeton est généré par `BCryptGenRandom` (32 octets), avec échec explicite du démarrage si le CSPRNG est indisponible.
+
+**Risque résiduel assumé pour la v1 :** un processus local hostile du même compte peut encore lire le jeton, consulter le snapshot et demander une action que RamScope propose. Le canal named pipe/DACL ou un helper élevé avec consentement par lot n'est pas implémenté et fera l'objet d'un lot séparé. Ne pas présenter cette version comme une protection contre un malware local.
+
 ## Droits et surface locale
 
 - L'élévation UAC est demandée au lancement, sauf avec `--demo` ou `--no-admin`.
