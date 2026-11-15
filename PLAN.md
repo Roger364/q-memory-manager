@@ -774,3 +774,18 @@ Pour C14, `gain_text` et le rendu JS testent la nature avant la valeur. Un `Gain
 **Tests de réversion.** `l_audit_accepte_une_regle_datee_et_refuse_une_date_invalide` échoue si l'audit redevient rigide ou accepte une date impossible ; `le_snapshot_expose_la_provenance_des_regles` et `le_rapport_expose_la_provenance_des_regles` échouent si les champs ne sont plus exposés ; `un_zero_mesure_reste_mesure_dans_le_rapport` échoue si `gain_text` décide à partir de `bytes == 0` ; `un_zero_mesure_survit_au_merge` échoue si `merge` ignore un zéro mesuré ; `un_zero_mesure_reste_mesure_dans_le_rendu_js` échoue si `gainText`/`gainLine` reviennent à `gainBytes` comme condition d'affichage.
 
 **Limites.** Le panneau de détails et le rapport n'ont pas été rouverts dans un navigateur pour ce lot ; le test JS est structurel. Aucune règle n'a reçu de date de revue individuelle : la provenance reste une référence de famille honnête, pas une validation règle par règle.
+
+## 15. C9–C13 — robustesse et finitions (2026-11-15)
+
+**Changement.** `extract_exe` utilise une copie ASCII minuscule pour trouver `.exe`, ce qui conserve les indices UTF-8 de la ligne d'origine. La boucle de ports essaie douze candidats jusqu'à 65 535 et affiche une plage explicite si tous sont occupés. Le serveur remplace `process::exit` par un arrêt coopératif : les quatre travailleurs sont réveillés avec `unblock`, puis rejoints avant que `serve` rende la main. Les deux occurrences « Irrréversible » sont corrigées et `report::esc` échappe aussi l'apostrophe.
+
+| Commande / contrôle | Code retour | Observation |
+|---|---:|---|
+| `cargo fmt --check` (depuis `ramscope/`) | 0 | formatage conforme |
+| `cargo test` | 0 | 86 tests, 86 réussis |
+| `cargo clippy --all-targets -- -D warnings` | 0 | aucune alerte |
+| `cargo build --release` | 0 | binaire produit |
+
+**Tests de réversion.** `extract_exe_supporte_une_casse_unicode_sans_paniquer` échoue avec l'ancien `to_lowercase()` sur une ligne contenant `İ` ; `le_dernier_port_est_essaye_et_la_plage_ne_deborde_pas` échoue si la boucle s'arrête avant 65 535 ou déborde ; `l_arret_cooperatif_attend_les_quatre_threads` échoue si `stop_workers` ne réveille pas et ne rejoint pas les quatre travailleurs ; `echappe_l_apostrophe_comme_l_interface` échoue si `esc` n'échappe plus `'`. Le test d'interface vérifie l'absence de « Irrréversible ».
+
+**Limites.** Le test d'arrêt utilise quatre travailleurs réels mais ne relance pas `serve` de bout en bout ; il ne prouve pas un rollback réellement tronqué, seulement que les threads sont rejoints. Aucun socket n'a été ouvert sur le port 65 535. L'échappement de l'apostrophe est vérifié sur la fonction et par présence dans l'export, pas par un parcours navigateur.

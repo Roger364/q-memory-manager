@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14 ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1 et C14 sont corrigés ; C8–C13 et C15 restent à traiter. C3/C4/C5 sont corrigés. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires au moment du lot, 75 après C3/C4/C5, puis 82 après C1/C14 et 86 après C9–C13 ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1, C14 et C9–C13 sont corrigés ; C8 et C15 restent à traiter. C3/C4/C5 sont corrigés. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -347,6 +347,10 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 - Arrêt sans écriture de rollback tronquée.
 - Textes utilisateur sans faute visible.
 
+**État (2026-11-15).** `extract_exe` recherche `.exe` sur une copie ASCII minuscule, dont les indices restent ceux de la chaîne d'origine ; le test avec `İ` échoue avec l'ancien `to_lowercase()` (découpe décalée). La boucle de ports utilise douze candidats plafonnés à 65 535 et affiche une plage explicite quand tous sont occupés. L'arrêt passe par `spawn_workers`/`stop_workers` : le drapeau est posé, les quatre travailleurs sont réveillés avec `unblock`, puis rejoints avant de rendre la main ; `process::exit` a disparu du serveur. Les deux occurrences « Irrréversible » sont corrigées, et l'échappement HTML du rapport traite désormais l'apostrophe comme l'interface.
+
+**Tests.** `extract_exe_supporte_une_casse_unicode_sans_paniquer`, `le_dernier_port_est_essaye_et_la_plage_ne_deborde_pas`, `l_arret_cooperatif_attend_les_quatre_threads`, `echappe_l_apostrophe_comme_l_interface` ; le test d'interface vérifie aussi l'absence de « Irrréversible » et la présence des échappements `&quot;`/`&#39;`. Limite : le test d'arrêt utilise quatre vrais travailleurs de test, mais ne relance pas la commande `serve` complète ; aucun socket n'est ouvert sur le port 65 535.
+
 ### 9.9 — Tests comportementaux : C8
 
 **Objectif.** Réduire les tests qui vérifient des chaînes de source et augmenter la couverture des décisions réelles.
@@ -574,14 +578,14 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 5. **9.5** : verrous indépendants ou correction documentaire (C5).
 6. **9.6** : provenance réelle des règles (C1), traité le 2026-11-15.
 7. **9.7** : zéro mesuré (C14), traité le 2026-11-15.
-8. **9.8** : robustesse et finitions (C9–C13).
+8. **9.8** : robustesse et finitions (C9–C13), traité le 2026-11-15.
 9. **9.9** : tests comportementaux (C8).
 10. **9.10** : décision de licence (C15).
 11. **9.11** : réduction de l'élévation UAC (D9-2a), implémentée ; les parcours `--admin`, `POST /api/elevate`, le clic DOM et le rechargement sur compte standard sont testés.
 
 Chaque étape doit être un commit séparé, avec son test nommé, sa commande et son code retour. Ne pas regrouper 9.1 à 9.4 dans un même commit : une revue de sécurité doit pouvoir être relue isolément.
 
-C1 et C14 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique reste bloquée tant que C15 n'est pas traité.
+C1, C14 et C9–C13 sont désormais clos. C2 et C7 le sont aussi ; la distribution publique reste bloquée tant que C15 n'est pas traité.
 
 ## 7. Matrice de tests à ajouter
 
@@ -603,14 +607,14 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 8. Critères de sortie du lot 9
 
-- [x] Les 43 tests historiques passent toujours ; les 82 tests actuels passent.
+- [x] Les 43 tests historiques passent toujours ; les 86 tests actuels passent.
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
 - [x] La CI est verte sur `c9771fc` : run Windows `43663058587`, toutes les étapes au vert.
 - [x] C7 est corrigé ou explicitement documenté comme hors modèle de menace ; C1 est corrigé.
 - [x] C3–C6 sont corrigés ou explicitement acceptés dans `SAFETY.md` ; C14 est corrigé.
-- [ ] C9–C13 sont corrigés.
+- [x] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
 - [x] D9-2a est implémenté et couvert par les tests unitaires ; `--no-admin` est strict côté serveur, le défaut est en lecture seule s'il n'est pas déjà élevé, et la relance ne boucle pas.
@@ -644,7 +648,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 11. Prochaine action
 
-**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5, C1, C14 et D9-2a sont traités ; la suite compte **82 tests**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). Restent ouverts : C8, C9–C13 et C15. D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
+**Point au 2026-11-15.** C7, C6, C2, C3, C4, C5, C1, C14, C9–C13 et D9-2a sont traités ; la suite compte **86 tests**, tous verts, et la revue documentaire de D9-2a est alignée sur le code (commit `bf5c7fb`). Restent ouverts : C8 et C15. D9-2b reste une conception, non implémentée ; la seule réserve de test de D9-2a est Edge, absent du Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
 
 D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la session déjà élevée n'est pas rétrogradée par `--no-admin`, et cette limite est désormais explicite dans `README.md`, `SAFETY.md`, `PLAN.md` et l'aide CLI.
 
@@ -652,8 +656,7 @@ La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_s
 
 Ordre recommandé pour la suite :
 1. **D9-2b — helper elevated one-shot** (conception en **9.12**) : valider les décisions ouvertes, puis implémenter le canal local, l'authentification, la durée de vie et les tests de réversion. Ne pas le mélanger à D9-1 ni à C2.
-2. **C9–C13** : robustesse et finitions, avec tests ciblés.
-3. **C8/C15** : tests comportementaux restants et décision de licence.
-4. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
+2. **C8/C15** : tests comportementaux restants et décision de licence.
+3. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. C3/C4/C5 sont désormais clos ; le plan est aligné sur ces constats et sur le durcissement livré.
