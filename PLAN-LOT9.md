@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par une action réelle suivie d'une restauration dans Windows Sandbox. C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -216,7 +216,9 @@ Total indicatif : **6 à 7 jours**, hors tests réels en VM et hors décision su
 
 Les tests unitaires couvrent la fonction pure et le moteur ; ce test HTTP couvre le branchement réel de la route. Depuis ce test, deux tests unitaires supplémentaires couvrent l'arrêt immédiat et la terminaison proposés (56 tests au total).
 
-**Vérification interface (2026-11-15).** L'interface a été ouverte dans Chromium sur le binaire release en mode démonstration. Le service `dmwappushservice` (Manuel → Désactivé) a été sélectionné, confirmé et appliqué : « Application : 1/1 réussi », point de restauration `dfb8a171e56522c1` créé. Le même point a ensuite été restauré depuis l'onglet Restauration : « Restauration : 1/1 réussi », service revenu à Manuel. Le journal navigateur ne contient aucune erreur console et les appels `/api/apply` et `/api/restore` ont répondu `200`. Aucune action n'a été appliquée sur une machine réelle.
+**Vérification interface (2026-11-15).** L'interface a été ouverte dans Chromium sur le binaire release en mode démonstration. Le service `dmwappushservice` (Manuel → Désactivé) a été sélectionné, confirmé et appliqué : « Application : 1/1 réussi », point de restauration `dfb8a171e56522c1` créé. Le même point a ensuite été restauré depuis l'onglet Restauration : « Restauration : 1/1 réussi », service revenu à Manuel. Le journal navigateur ne contient aucune erreur console et les appels `/api/apply` et `/api/restore` ont répondu `200`. Aucune action n'a été appliquée sur une machine réelle lors de ce test d'interface.
+
+**Vérification réelle en Windows Sandbox (2026-11-15).** Le binaire release a été exécuté **sans `--demo`**, avec `--elevated`, dans le Sandbox C6 déjà ouvert (le second Sandbox a été refusé : une seule instance à la fois). Le service réel `dmwappushservice` a été choisi parmi les actions proposées : `manual` avant, `disabled` après `POST /api/apply` (`200`), confirmé par `Win32_Service.StartMode=Disabled`. Le point `526d88c293ac7808` a ensuite été restauré par `POST /api/restore` (`200`) : snapshot et `Win32_Service.StartMode` revenus à `manual`/`Manual`. Le test vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sandbox est resté ouvert. Limites : un seul service, compte Sandbox administrateur, pas de test du consentement UAC standard, ni des actions startup/tâche/processus.
 
 ### 9.4 — Origine et taille des requêtes : C3, C4
 
@@ -396,15 +398,15 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
-- [ ] La CI est verte et reproductible.
+- [x] La CI est verte sur `f7dec15` : run Windows `43657943489`, toutes les étapes au vert.
 - [ ] C1 et C7 sont corrigés ou explicitement documentés comme hors modèle de menace.
 - [ ] C3–C6 et C14 sont corrigés ou explicitement acceptés dans `SAFETY.md`.
 - [ ] C9–C13 sont corrigés.
 - [ ] C8 est traité par des tests comportementaux ciblés, avec les limites documentées.
 - [ ] C15 est décidé et consigné.
 - [ ] La documentation ne promet plus de verrou, d'authentification ou de garantie non testée.
-- [ ] Une action réelle a été testée dans une VM/Sandbox jetable, avec restauration.
-- [ ] Le dépôt distant est à jour après accord de Ro.
+- [x] Une action réelle a été testée dans un Windows Sandbox jetable : `dmwappushservice` Manuel → Désactivé → Manuel, avec `Win32_Service.StartMode` vérifié avant, après application et après restauration.
+- [x] Le dépôt distant est à jour après accord de Ro.
 - [ ] `PLAN.md` contient les commandes, codes retour et artefacts du lot.
 - [x] C7 et C6 sont implémentés et couverts par des tests unitaires locaux ; C6 est validé dans Windows Sandbox pour la propagation des options (`--port`, `--host`, `--no-browser`, `--elevated` unique, `--no-admin` retiré). Le consentement UAC d'un compte standard et le test `localhost` restent à faire.
 
