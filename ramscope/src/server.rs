@@ -20,6 +20,19 @@ const CSP: &str = "default-src 'self'; script-src 'self'; \
 style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; \
 frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
+/// Note produite par la collecte lorsqu'elle tourne sans droits administrateur.
+/// Le backend ne connaît pas la politique CLI ; le serveur doit la retirer en
+/// mode strict pour ne pas inviter à une relance que `/api/elevate` refuse.
+const READONLY_ADMIN_NOTE: &str =
+    "Mode lecture seule : lance RamScope en administrateur pour appliquer les changements.";
+
+fn apply_elevation_policy(meta: &mut Meta, can_elevate: bool) {
+    meta.can_elevate = can_elevate;
+    if !can_elevate && !meta.is_admin {
+        meta.notes.retain(|note| note != READONLY_ADMIN_NOTE);
+    }
+}
+
 pub struct App {
     pub backend: Backend,
     pub token: String,
@@ -45,7 +58,7 @@ impl App {
         let mut s = self.backend.snapshot();
         // Le backend ne connaît pas la politique CLI ; le serveur est la
         // seule source de vérité pour le droit d'élever cette session.
-        s.meta.can_elevate = self.can_elevate;
+        apply_elevation_policy(&mut s.meta, self.can_elevate);
         *self.cache.lock().unwrap() = Some((Instant::now(), s.clone()));
         s
     }
@@ -713,6 +726,37 @@ mod tests {
         };
         assert!(app(true).snapshot(true).meta.can_elevate);
         assert!(!app(false).snapshot(true).meta.can_elevate);
+    }
+
+    #[test]
+    fn le_snapshot_strict_ne_propose_pas_de_relance_admin() {
+        let meta = |can_elevate, notes| Meta {
+            computer: String::new(),
+            user: String::new(),
+            os: String::new(),
+            uptime_secs: 0,
+            is_admin: false,
+            can_elevate,
+            demo: false,
+            collected_at: String::new(),
+            duration_ms: 0,
+            version: String::new(),
+            notes,
+        };
+
+        let mut strict = meta(true, vec![READONLY_ADMIN_NOTE.into(), "note métier".into()]);
+        apply_elevation_policy(&mut strict, false);
+        assert!(!strict.can_elevate);
+        assert!(!strict
+            .notes
+            .iter()
+            .any(|note| note.contains("lance RamScope en administrateur")));
+        assert_eq!(strict.notes, vec!["note métier".to_string()]);
+
+        let mut permissif = meta(true, vec![READONLY_ADMIN_NOTE.into()]);
+        apply_elevation_policy(&mut permissif, true);
+        assert!(permissif.can_elevate);
+        assert_eq!(permissif.notes, vec![READONLY_ADMIN_NOTE.to_string()]);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Plan d'améliorations — RamScope, lot 9
 
-**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 67 tests unitaires ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
+**Statut :** plan révisé le 2026-11-14 après évaluation de la revue Hermes-Beam. C7 et C6 sont implémentés localement avec leurs tests ; C6 est validé dans Windows Sandbox pour la propagation des options. C2 est implémenté, poussé et validé le 2026-11-15 par des actions réelles de service, de tâche planifiée et d'entrée de démarrage, chacune suivie d'une restauration dans Windows Sandbox ; le correctif de repli des tâches issu de ces tests est inclus. D9-2a est implémenté dans 9.11 et couvert par 68 tests unitaires ; le test UAC sur un compte standard a été exécuté le 2026-11-15 dans un Windows Sandbox de test (acceptation et annulation réelles). C1–C5 et C8–C15 restent à traiter. L'industrialisation 9.10 est partiellement livrée.
 **Base :** revue WorkBuddy (audit `d08e412`) et revue Hermes-Beam (audit `3673120`) ; plan révisé sur `main` au commit `761343e`, après la fusion de la mise à jour Dependabot.
 **Objectif :** rendre RamScope distribuable sans refonte, en corrigeant d'abord la frontière de confiance, puis les écarts entre le code et la documentation, puis la qualité des tests.
 
@@ -369,7 +369,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 ### 9.11 — Réduction de l'élévation UAC : D9-2a
 
-**État :** implémenté le 2026-11-15, tests unitaires au vert (67 tests). Le consentement UAC sur un compte standard a été testé le 2026-11-15 : acceptation et annulation réelles, avec `admin:true` après acceptation et `admin:false` / `can_elevate:true` après annulation. La route `POST /api/elevate` du bouton a aussi été testée ; elle a révélé puis fait corriger le conflit de port de la relance élevée. Le clic DOM et le rechargement de la page ont été validés avec Chrome for Testing portable : Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722).
+**État :** implémenté le 2026-11-15, tests unitaires au vert (68 tests). Le consentement UAC sur un compte standard a été testé le 2026-11-15 : acceptation et annulation réelles, avec `admin:true` après acceptation et `admin:false` / `can_elevate:true` après annulation. La route `POST /api/elevate` du bouton a aussi été testée ; elle a révélé puis fait corriger le conflit de port de la relance élevée. Le clic DOM et le rechargement de la page ont été validés avec Chrome for Testing portable : Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722).
 
 **Décision validée le 2026-11-15 (option A).** Le lancement sans option devient une session de **lecture seule** ; l'élévation n'est demandée qu'après une action explicite de l'utilisateur.
 
@@ -409,6 +409,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 - `le_serveur_strict_ne_propose_pas_elevate` : contrôle serveur/JS, pas seulement le texte du README.
 - `le_snapshot_annonce_le_droit_d_elevation` : propagation de `can_elevate` au snapshot.
 - `une_relance_elevee_reessaie_le_port_avant_de_changer` : le retry de port est limité à `--elevated`, et seulement tant que le quota de tentatives n'est pas épuisé.
+- `le_snapshot_strict_ne_propose_pas_de_relance_admin` : retire la note générique de relance admin en `--no-admin`, la conserve en lecture seule autorisant l'élévation et laisse les autres notes intactes.
 - Test dans une VM avec un **compte standard** : défaut sans UAC ; clic « Passer en administrateur » → UAC ; annulation → l'ancien serveur lecture seule reste vivant ; acceptation → une seule instance élevée ; `--admin` → UAC au démarrage ; `--no-admin` → aucune proposition d'élévation. **Exécuté le 2026-11-15 dans un Windows Sandbox de test : les scénarios `--admin` d'acceptation et d'annulation, `POST /api/elevate` avec `admin:false` → UAC acceptée → `admin:true` sur le même port, le clic DOM et le rechargement avec Chrome for Testing portable sont validés. Le compte standard a aussi validé `--no-admin` (snapshot `can_elevate=false`, `POST /api/elevate` 403, aucun `consent.exe`) et `--host localhost` (page et API via `localhost`).**
 
 **Résultats du test standard (2026-11-15).** Le Sandbox est livré avec UAC désactivé ; `EnableLUA=1` a été appliqué puis le Sandbox a été redémarré. Un compte `RamScopeStd` (Utilisateurs) et un compte administrateur distinct ont été créés. Les deux scénarios ont produit une vraie fenêtre `consent.exe` (`Credential Dialog Xaml Host`) avec les boutons Oui/Non :
@@ -424,7 +425,7 @@ Le test service vérifie aussi l'absence de copie de `vcruntime140.dll`. Le Sand
 
 Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permettre l'automatisation du clic ; le chemin applicatif reste `ShellExecuteW("runas")` puis la relance `--elevated`. Les deux premiers scénarios utilisent `--admin` ; le bouton « Passer en administrateur » a été cliqué dans Chrome for Testing portable, et la page rechargée affiche `Administrateur` sans bouton d'élévation. Edge n'a pas pu être installé dans le Sandbox (MSI 1603/1722) ; le test DOM utilise donc Chromium, pas Edge. Les preuves sont conservées dans `sandbox-test/d92/accept-evidence/`, `sandbox-test/d92/cancel-result.txt`, `sandbox-test/d92/endpoint-evidence/`, `sandbox-test/d92/button-evidence/` et `sandbox-test/d92/remain-evidence/`. Le Sandbox C6 est resté ouvert ; le Sandbox de test d92 a été fermé après relevé.
 
-**Observation `--no-admin`.** Le snapshot expose bien `can_elevate=false`, mais sa liste `notes` contient encore « Mode lecture seule : lance RamScope en administrateur pour appliquer les changements » ; `app.js` ajoute la note stricte, ce qui produit un message contradictoire. À corriger dans un petit lot séparé, avec un test nommé sur le snapshot.
+**Observation `--no-admin`.** Le snapshot expose bien `can_elevate=false`, mais sa liste `notes` contenait encore « Mode lecture seule : lance RamScope en administrateur pour appliquer les changements » ; `app.js` ajoutait la note stricte, ce qui produisait un message contradictoire. **Corrigé** : `apply_elevation_policy` retire cette note en mode strict ; le test `le_snapshot_strict_ne_propose_pas_de_relance_admin` couvre la réversion, et le rejeu Sandbox après correction observe `notes:[]`.
 
 **Défaut de port corrigé.** Avant correction, `/api/elevate` répondait `ok:true` et lançait bien `--elevated`, mais l'instance élevée se rabattait sur 8899 parce que l'ancien serveur occupait encore 8898 ; le relevé après acceptation échouait. `main.rs` réessaie désormais le port demandé pendant 5 s pour `--elevated`. Après rebuild, le test d'endpoint a observé `admin:true`, `can_elevate:false`, `original_exited:true` et `/api/quit` 200 sur 8898.
 
@@ -437,7 +438,7 @@ Le bureau sécurisé a été désactivé uniquement dans ce Sandbox pour permett
 - [x] Les scénarios `--admin` d'acceptation et d'annulation sur compte standard sont consignés ; C6, compte administrateur, ne peut pas valider le consentement UAC.
 - [x] La route `POST /api/elevate` du bouton est testée sur compte standard, y compris le retour sur le même port après acceptation ; le défaut de port est corrigé.
 - [x] Le clic DOM et le rechargement après acceptation sont validés avec Chrome for Testing portable ; Edge n'a pas pu être installé dans le Sandbox.
-- [x] `--no-admin` sur VM standard : `can_elevate=false`, `POST /api/elevate` 403, aucun `consent.exe` ; un doublon de note du snapshot reste à corriger.
+- [x] `--no-admin` sur VM standard : `can_elevate=false`, `POST /api/elevate` 403, aucun `consent.exe` ; la note contradictoire a été corrigée et couverte par `le_snapshot_strict_ne_propose_pas_de_relance_admin`.
 - [x] `--host localhost` sur VM standard : page et API via `localhost` ; l'alias `127.0.0.1` n'était pas joignable sur cette liaison.
 
 **Effort indicatif :** 0,5 à 0,75 jour, plus le test VM. Aucun changement de dépendance.
@@ -488,7 +489,7 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 ## 8. Critères de sortie du lot 9
 
-- [x] Les 43 tests historiques passent toujours ; les 67 tests actuels passent.
+- [x] Les 43 tests historiques passent toujours ; les 68 tests actuels passent.
 - [ ] Les nouveaux tests de réversion passent pour les autres chantiers.
 - [x] `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release` : code retour 0.
 - [x] C2 est implémenté et couvert par les tests de réversion nommés ; le risque local résiduel est documenté dans `SAFETY.md` (D9-1).
@@ -531,10 +532,10 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 C7, C6, C2 et D9-2a sont traités. D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
 
-Deux écarts observés pendant ces preuves sont à traiter avant de considérer D9-2a parfaitement fini : le snapshot `--no-admin` contient encore la note générique invitant à relancer en administrateur malgré `can_elevate=false`, et l'alias `127.0.0.1` n'est pas joignable quand le serveur est lié à `localhost`. Le premier est un défaut de message à corriger avec un test nommé ; le second doit être soit documenté comme comportement de liaison, soit uniformisé.
+La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_strict_ne_propose_pas_de_relance_admin`. Il reste un écart à trancher : l'alias `127.0.0.1` n'est pas joignable quand le serveur est lié à `localhost` ; il doit être soit documenté comme comportement de liaison, soit uniformisé.
 
 Ordre recommandé pour la suite :
-1. **Corriger la note `--no-admin`** et décider du comportement de l'alias `localhost`/`127.0.0.1`, dans un petit commit de suivi D9-2a avec tests de réversion.
+1. **Trancher l'alias `localhost`/`127.0.0.1`** et le documenter ou l'uniformiser, avec un test si le comportement change.
 2. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
 3. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
 4. **C9–C13** : robustesse et finitions, avec tests ciblés.
