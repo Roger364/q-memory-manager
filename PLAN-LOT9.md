@@ -532,14 +532,13 @@ Les tests d'écriture réelle restent limités à une VM ou un Sandbox jetable. 
 
 C7, C6, C2 et D9-2a sont traités. D9-2a est clôturé avec les preuves UAC, route, DOM, `--no-admin` et `--host localhost` ; la seule réserve de test est Edge, qui n'est pas installable dans le Sandbox utilisé (le clic DOM a été validé sous Chrome for Testing, même moteur Chromium).
 
-La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_strict_ne_propose_pas_de_relance_admin`. Il reste un écart à trancher : l'alias `127.0.0.1` n'est pas joignable quand le serveur est lié à `localhost` ; il doit être soit documenté comme comportement de liaison, soit uniformisé.
+La note contradictoire `--no-admin` est corrigée et couverte par `le_snapshot_strict_ne_propose_pas_de_relance_admin`. L'alias `127.0.0.1` non joignable avec `--host localhost` est désormais documenté comme comportement de liaison : `localhost` suit la résolution locale (souvent `::1`), et l'adresse affichée au démarrage doit être utilisée. Aucun changement de code n'est retenu pour ce point.
 
 Ordre recommandé pour la suite :
-1. **Trancher l'alias `localhost`/`127.0.0.1`** et le documenter ou l'uniformiser, avec un test si le comportement change.
-2. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
-3. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
-4. **C9–C13** : robustesse et finitions, avec tests ciblés.
-5. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
-6. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
+1. **D9-2b — helper elevated one-shot**, mais uniquement après une note de conception dédiée : canal local, authentification, durée de vie et test de réversion. Ne pas le mélanger à D9-1 ni à C2.
+2. **C3/C4/C5** : origine obligatoire, corps borné, verrous réellement indépendants. Faible risque, forte valeur de durcissement.
+3. **C9–C13** : robustesse et finitions, avec tests ciblés.
+4. **C1/C15** : provenance réelle des règles et décision de licence, avant toute distribution publique.
+5. **Validation Edge spécifique** : sur une image où Edge est préinstallé, sans bloquer le mode par défaut déjà validé sous Chromium.
 
 La revue Hermes-Beam ne change pas cette priorité : elle confirme C7 et C6, ajoute C1/C8/C15, et justifie de renforcer 9.3 sur l'état fourni par le client. Le plan est désormais aligné sur ces constats.

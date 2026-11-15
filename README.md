@@ -29,7 +29,7 @@ ramscope.exe --demo          # données simulées, aucun accès à la machine
 | Option | Effet |
 |---|---|
 | `--port N` | port d'écoute (8765 par défaut, essaie les 11 suivants s'il est occupé) |
-| `--host ADRESSE` | adresse d'écoute : `127.0.0.1` (défaut) ou `localhost` ; toute autre valeur est refusée au démarrage |
+| `--host ADRESSE` | adresse d'écoute : `127.0.0.1` (défaut) ou `localhost` ; toute autre valeur est refusée au démarrage. `localhost` se lie à la résolution locale (souvent `::1`) : l'alias `127.0.0.1` n'est pas garanti |
 | `--no-browser` | ne pas ouvrir la fenêtre automatiquement |
 | `--admin` | demander l'élévation UAC au lancement |
 | `--no-admin` | lecture seule stricte : interdit l'élévation, y compris depuis l'interface |

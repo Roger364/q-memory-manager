@@ -194,6 +194,8 @@ Usage : ramscope.exe [options]
 
   --port N        port d'écoute (défaut {DEFAULT_PORT}, essaie les suivants si occupé)
   --host ADRESSE  adresse d'écoute : 127.0.0.1 (défaut) ou localhost
+                  localhost se lie à la résolution locale ; l'alias 127.0.0.1
+                  n'est pas garanti
   --no-browser    ne pas ouvrir la fenêtre automatiquement
   --admin         demander l'élévation UAC au lancement
   --no-admin      lecture seule stricte (interdit toute élévation)
