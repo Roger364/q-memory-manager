@@ -118,3 +118,13 @@ RamScope est publié sous licence **MIT** par Bisse Studio. Le code peut être u
 Les contributions sont bienvenues ; lisez [`CONTRIBUTING.md`](CONTRIBUTING.md) avant d'ouvrir une pull request. Pour signaler une vulnérabilité, utilisez la procédure privée décrite dans [`SECURITY.md`](SECURITY.md). Les composants tiers et leurs textes de licence sont reproduits dans [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), généré avec `cargo-about`.
 
 Voir `SAFETY.md` pour les limites d'usage et `PLAN.md` pour le plan de travail et les défauts connus.
+
+## Code signing policy
+
+RamScope est signé avec un certificat fourni par SignPath Foundation.
+
+- **Free code signing provided by SignPath.io, certificate by SignPath Foundation.**
+- **Équipe et rôles** : projet solo maintenu par Roger Briguet (Bisse Studio). Le mainteneur occupe tous les rôles (commit, review, approbation des releases).
+- **Confidentialité** : ce programme ne transfère aucune information vers d'autres systèmes réseau, sauf à la demande explicite de l'utilisateur.
+- **Processus de release** : chaque release est construite automatiquement par GitHub Actions (workflow `.github/workflows/release.yml`), puis la demande de signature est approuvée manuellement dans le tableau de bord SignPath avant publication.
+- **Vérifiabilité** : les builds sont reproductibles à partir du code source public. Le workflow inclut les tests, clippy, fmt et la vérification des checksums.
