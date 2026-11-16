@@ -2,9 +2,10 @@
 
 ## État actuel
 
-- **Pas de signature** : le `.exe` n'est pas signé. SmartScreen affiche un avertissement au premier lancement.
-- **Pas de publication automatique** : pas de release GitHub avec binaire.
-- La page site renvoie vers GitHub + instructions de compilation (pas de promesse de `.exe` signé).
+- **Pas de signature** : le `.exe` n'est pas signé (v1.0.0). SmartScreen affiche un avertissement au premier lancement.
+- **Signature en cours** : demande soumise à SignPath Foundation (novembre 2026). Le workflow `release.yml` est prêt à signer dès que SignPath approuve le projet et que les variables/secrets GitHub sont configurés.
+- **Release existante** : v1.0.0 publiée sur GitHub (binaire non signé + SHA-256).
+- La page site renvoie vers GitHub + instructions de compilation et de vérification du SHA-256.
 
 ## Piste choisie : SignPath.io
 

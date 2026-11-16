@@ -121,10 +121,11 @@ Voir `SAFETY.md` pour les limites d'usage et `PLAN.md` pour le plan de travail e
 
 ## Code signing policy
 
-RamScope est signé avec un certificat fourni par SignPath Foundation.
+RamScope sera signé avec un certificat fourni par SignPath Foundation (mise en place en cours).
 
 - **Free code signing provided by SignPath.io, certificate by SignPath Foundation.**
 - **Équipe et rôles** : projet solo maintenu par Roger Briguet (Bisse Studio). Le mainteneur occupe tous les rôles (commit, review, approbation des releases).
 - **Confidentialité** : ce programme ne transfère aucune information vers d'autres systèmes réseau, sauf à la demande explicite de l'utilisateur.
+- **Désinstallation** : aucune installation requise — supprimer le fichier `.exe` suffit. RamScope ne modifie le registre ni aucun fichier système.
 - **Processus de release** : chaque release est construite automatiquement par GitHub Actions (workflow `.github/workflows/release.yml`), puis la demande de signature est approuvée manuellement dans le tableau de bord SignPath avant publication.
 - **Vérifiabilité** : les builds sont reproductibles à partir du code source public. Le workflow inclut les tests, clippy, fmt et la vérification des checksums.
